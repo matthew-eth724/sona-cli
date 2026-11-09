@@ -1,0 +1,141 @@
+# The project file
+
+`va.json` holds the whole edit. It is the only state: `.va/` is cache, and
+deleting it costs a re-render, never information.
+
+The file is meant to be both machine-written (by the CLI) and hand-edited (by an
+agent with `jq`, or by a person). Every command re-parses and re-validates it, so
+a hand edit is legal — it just has to survive the rules below.
+
+```json
+{
+  "version": 1,
+  "canvas": { "width": 1080, "height": 1920, "fps": "30" },
+  "tracks": {
+    "video": [
+      {
+        "id": "clip_1",
+        "source": "/media/intro.mp4",
+        "src_in": 1000000,
+        "src_out": 6000000,
+        "speed": 1.0,
+        "transform": "fit",
+        "gain_db": 0.0
+      }
+    ],
+    "audio": { "source": "/media/music.mp3", "gain_db": -14.0 },
+    "overlays": [
+      {
+        "kind": "text",
+        "id": "text_1",
+        "content": "Ship faster",
+        "at": { "start": 500000, "end": 3000000 },
+        "anchor": "bottom",
+        "size": 48,
+        "color": "white"
+      }
+    ],
+    "captions": { "source": "/media/subs.srt", "burn": true }
+  }
+}
+```
+
+## Units
+
+**All times are integer microseconds.** `1000000` is one second. No floats, no
+seconds, no frames. The CLI accepts `4s` / `00:00:04.000` and converts; the file
+always stores integers, so a round trip through `jq` never drifts.
+
+Serializers also accept a time *string* on input (either form parses), but the
+CLI always writes integers.
+
+## canvas
+
+| field | type | notes |
+| --- | --- | --- |
+| `width`, `height` | u32 | non-zero; every clip is conformed to this |
+| `fps` | `"30"`, `"29.97"`, `"30000/1001"` | rational, so NTSC rates are exact |
+
+Changing the canvas invalidates every clip, because each normalized segment
+carries the size and rate.
+
+## tracks.video
+
+An ordered array. **The order of the array is the timeline order** — there is no
+separate sequence or timeline object to keep in sync.
+
+| field | type | default | notes |
+| --- | --- | --- | --- |
+| `id` | string | required | unique; allocated by the CLI as `clip_<n>` |
+| `source` | string | required | absolute path; `add` canonicalizes |
+| `src_in` | time | required | offset into the source |
+| `src_out` | time | omitted = end of source | clamped to the media duration |
+| `speed` | f64 | `1.0` | must be > 0; pitch preserved |
+| `transform` | `fit` \| `fill` | `fit` | pad or crop to the canvas |
+| `gain_db` | f32 | `0.0` | per-clip audio gain |
+
+A clip's contribution to the timeline is
+`(min(src_out, media_duration) - src_in) / speed`.
+
+## tracks.audio
+
+One optional music bed, mixed under the clips and ended by them.
+
+| field | type | default |
+| --- | --- | --- |
+| `source` | string | required |
+| `gain_db` | f32 | `0.0` |
+
+## tracks.overlays
+
+A tagged array; the tag is `kind`.
+
+`kind: "text"`:
+
+| field | type | default | notes |
+| --- | --- | --- | --- |
+| `id` | string | required | `text_<n>` |
+| `content` | string | required | escaped for drawtext internally |
+| `at` | `{start, end}` | required | microseconds, end-exclusive |
+| `anchor` | `top` \| `center` \| `bottom` | `bottom` |
+| `size` | u32 | `48` | font size in canvas pixels |
+| `color` | string | `white` | any ffmpeg colour |
+
+## tracks.captions
+
+| field | type | default | notes |
+| --- | --- | --- | --- |
+| `source` | string | required | absolute path to an `.srt` |
+| `burn` | bool | `true` | burn into pixels; `false` currently renders nothing |
+
+## Invariants
+
+Hard errors — the file will not load:
+
+- `version` must equal `1`.
+- `canvas.width` and `canvas.height` must be non-zero.
+- Every clip's `speed` must be > 0.
+- `src_out` must be ≥ `src_in`.
+- `tracks.video` must not be empty at render time (a project with no clips can
+  exist; it just cannot render).
+
+Warnings — reported in the `warnings[]` of whichever command caused them, and in
+`inspect`:
+
+| code | meaning |
+| --- | --- |
+| `media_missing` | a source path does not exist |
+| `clip_past_media` | `src_out` is beyond the source's duration (clamped) |
+| `clip_has_no_video` | the source has no video stream |
+| `clip_empty` | trimming left the clip with no duration |
+| `captions_missing` | the SRT path does not exist |
+| `text_past_end` | an overlay window runs past the end of the timeline |
+
+## What not to put in it
+
+Credentials. `GEMINI_API_KEY` and `DEEPGRAM_API_KEY` are read from the
+environment only. A project file gets committed, shared and pasted into
+transcripts; secrets do not belong in it.
+
+Rendered output paths. The render target is a flag (`va render -o`), not project
+state, so the same project can produce a preview and a master without an edit.

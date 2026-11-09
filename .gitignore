@@ -1,0 +1,15 @@
+# build output
+/target
+
+# project state and render cache (never authoritative)
+/.va
+/demo
+
+# local media and proof artefacts: inputs and evidence stay out of the repo.
+# `va` and the verify skill generate their own fixtures with ffmpeg.
+/resource
+/verification
+
+# secrets: keys live in the environment, never in the tree
+.env
+*.tmp

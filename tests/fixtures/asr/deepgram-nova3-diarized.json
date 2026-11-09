@@ -1,0 +1,1696 @@
+{
+ "metadata": {
+  "transaction_key": "deprecated",
+  "request_id": "01a1bf4f-09da-7310-82b2-eff91c40f314",
+  "sha256": "53f0cc3c9d0225b3aacad25f36a02709c9f78b95366de00eb7f79b58dc19d233",
+  "created": "2026-11-09T07:56:31.140Z",
+  "duration": 30.987,
+  "channels": 1,
+  "models": [
+   "2187e11a-3532-4498-b076-81fa530bdd49"
+  ],
+  "model_info": {
+   "2187e11a-3532-4498-b076-81fa530bdd49": {
+    "name": "general-nova-3",
+    "version": "2025-07-31.0",
+    "arch": "nova-3"
+   }
+  },
+  "diarize_info": {
+   "model_uuid": "6946b038-8264-4505-acf7-9822c009fecb",
+   "arch": "v2"
+  }
+ },
+ "results": {
+  "channels": [
+   {
+    "alternatives": [
+     {
+      "transcript": "Jane? Mark? Hi. It's been ages since I last saw you. How are you and Jackie? Yeah. Good. Thanks. And your new baby, George, isn't it? You've got a good memory. Yes. He's two now. What about you? Are you still working in the health center? Yes. For the time being, but we're moving in a couple of months. Anyhow, I'd better go. I'm late for work. Lovely to see you again. Yeah. Likewise. Keep in touch.",
+      "confidence": 0.99902344,
+      "words": [
+       {
+        "word": "jane",
+        "start": 0.71999997,
+        "end": 1.44,
+        "confidence": 0.86694336,
+        "speaker": 0,
+        "speaker_confidence": 0.9630824,
+        "punctuated_word": "Jane?"
+       },
+       {
+        "word": "mark",
+        "start": 1.68,
+        "end": 2.6399999,
+        "confidence": 0.85961914,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Mark?"
+       },
+       {
+        "word": "hi",
+        "start": 3.04,
+        "end": 3.7599998,
+        "confidence": 0.99560547,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Hi."
+       },
+       {
+        "word": "it's",
+        "start": 3.84,
+        "end": 4.16,
+        "confidence": 0.9995117,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "It's"
+       },
+       {
+        "word": "been",
+        "start": 4.16,
+        "end": 4.4,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "been"
+       },
+       {
+        "word": "ages",
+        "start": 4.4,
+        "end": 4.88,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "ages"
+       },
+       {
+        "word": "since",
+        "start": 4.88,
+        "end": 5.2,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "since"
+       },
+       {
+        "word": "i",
+        "start": 5.2,
+        "end": 5.3599997,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "I"
+       },
+       {
+        "word": "last",
+        "start": 5.3599997,
+        "end": 5.6,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "last"
+       },
+       {
+        "word": "saw",
+        "start": 5.6,
+        "end": 5.92,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "saw"
+       },
+       {
+        "word": "you",
+        "start": 5.92,
+        "end": 6.48,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "you."
+       },
+       {
+        "word": "how",
+        "start": 6.72,
+        "end": 6.96,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "How"
+       },
+       {
+        "word": "are",
+        "start": 6.96,
+        "end": 7.2,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "are"
+       },
+       {
+        "word": "you",
+        "start": 7.2,
+        "end": 7.2799997,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "you"
+       },
+       {
+        "word": "and",
+        "start": 7.2799997,
+        "end": 7.52,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "and"
+       },
+       {
+        "word": "jackie",
+        "start": 7.52,
+        "end": 8.4,
+        "confidence": 0.9387207,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Jackie?"
+       },
+       {
+        "word": "yeah",
+        "start": 8.4,
+        "end": 8.88,
+        "confidence": 0.99316406,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Yeah."
+       },
+       {
+        "word": "good",
+        "start": 8.88,
+        "end": 9.2,
+        "confidence": 0.98168945,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Good."
+       },
+       {
+        "word": "thanks",
+        "start": 9.2,
+        "end": 9.759999,
+        "confidence": 0.9995117,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Thanks."
+       },
+       {
+        "word": "and",
+        "start": 10.0,
+        "end": 10.32,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "And"
+       },
+       {
+        "word": "your",
+        "start": 10.32,
+        "end": 10.48,
+        "confidence": 0.99609375,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "your"
+       },
+       {
+        "word": "new",
+        "start": 10.48,
+        "end": 10.719999,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "new"
+       },
+       {
+        "word": "baby",
+        "start": 10.719999,
+        "end": 11.44,
+        "confidence": 0.8625488,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "baby,"
+       },
+       {
+        "word": "george",
+        "start": 11.44,
+        "end": 12.0,
+        "confidence": 0.9321289,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "George,"
+       },
+       {
+        "word": "isn't",
+        "start": 12.0,
+        "end": 12.16,
+        "confidence": 0.9995117,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "isn't"
+       },
+       {
+        "word": "it",
+        "start": 12.16,
+        "end": 12.32,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "it?"
+       },
+       {
+        "word": "you've",
+        "start": 12.595,
+        "end": 13.395,
+        "confidence": 0.986084,
+        "speaker": 0,
+        "speaker_confidence": 0.5,
+        "punctuated_word": "You've"
+       },
+       {
+        "word": "got",
+        "start": 13.395,
+        "end": 13.475,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "got"
+       },
+       {
+        "word": "a",
+        "start": 13.475,
+        "end": 13.635,
+        "confidence": 0.99902344,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "a"
+       },
+       {
+        "word": "good",
+        "start": 13.635,
+        "end": 13.795,
+        "confidence": 0.99902344,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "good"
+       },
+       {
+        "word": "memory",
+        "start": 13.795,
+        "end": 14.355,
+        "confidence": 0.9980469,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "memory."
+       },
+       {
+        "word": "yes",
+        "start": 14.435,
+        "end": 14.755,
+        "confidence": 0.9499512,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Yes."
+       },
+       {
+        "word": "he's",
+        "start": 14.755,
+        "end": 14.995001,
+        "confidence": 0.9902344,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "He's"
+       },
+       {
+        "word": "two",
+        "start": 14.995001,
+        "end": 15.235001,
+        "confidence": 0.9741211,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "two"
+       },
+       {
+        "word": "now",
+        "start": 15.235001,
+        "end": 15.795,
+        "confidence": 0.9995117,
+        "speaker": 0,
+        "speaker_confidence": 0.5,
+        "punctuated_word": "now."
+       },
+       {
+        "word": "what",
+        "start": 15.875,
+        "end": 16.115,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "What"
+       },
+       {
+        "word": "about",
+        "start": 16.115,
+        "end": 16.355,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "about"
+       },
+       {
+        "word": "you",
+        "start": 16.355,
+        "end": 16.755001,
+        "confidence": 0.99609375,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "you?"
+       },
+       {
+        "word": "are",
+        "start": 16.755001,
+        "end": 16.995,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Are"
+       },
+       {
+        "word": "you",
+        "start": 16.995,
+        "end": 17.075,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "you"
+       },
+       {
+        "word": "still",
+        "start": 17.075,
+        "end": 17.315,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "still"
+       },
+       {
+        "word": "working",
+        "start": 17.315,
+        "end": 17.555,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "working"
+       },
+       {
+        "word": "in",
+        "start": 17.555,
+        "end": 17.715,
+        "confidence": 0.9970703,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "in"
+       },
+       {
+        "word": "the",
+        "start": 17.715,
+        "end": 17.795,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "the"
+       },
+       {
+        "word": "health",
+        "start": 17.795,
+        "end": 18.035,
+        "confidence": 0.984375,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "health"
+       },
+       {
+        "word": "center",
+        "start": 18.035,
+        "end": 18.675,
+        "confidence": 0.9890137,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "center?"
+       },
+       {
+        "word": "yes",
+        "start": 18.995,
+        "end": 19.475,
+        "confidence": 0.73168945,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Yes."
+       },
+       {
+        "word": "for",
+        "start": 19.475,
+        "end": 19.635,
+        "confidence": 0.99609375,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "For"
+       },
+       {
+        "word": "the",
+        "start": 19.635,
+        "end": 19.715,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "the"
+       },
+       {
+        "word": "time",
+        "start": 19.715,
+        "end": 19.955,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "time"
+       },
+       {
+        "word": "being",
+        "start": 19.955,
+        "end": 20.515,
+        "confidence": 0.7668457,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "being,"
+       },
+       {
+        "word": "but",
+        "start": 20.595001,
+        "end": 20.835,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "but"
+       },
+       {
+        "word": "we're",
+        "start": 20.835,
+        "end": 21.075,
+        "confidence": 0.9995117,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "we're"
+       },
+       {
+        "word": "moving",
+        "start": 21.075,
+        "end": 21.395,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "moving"
+       },
+       {
+        "word": "in",
+        "start": 21.395,
+        "end": 21.555,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "in"
+       },
+       {
+        "word": "a",
+        "start": 21.555,
+        "end": 21.715,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "a"
+       },
+       {
+        "word": "couple",
+        "start": 21.715,
+        "end": 21.955,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "couple"
+       },
+       {
+        "word": "of",
+        "start": 21.955,
+        "end": 22.115,
+        "confidence": 0.9980469,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "of"
+       },
+       {
+        "word": "months",
+        "start": 22.115,
+        "end": 22.355,
+        "confidence": 0.9995117,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "months."
+       },
+       {
+        "word": "anyhow",
+        "start": 23.241999,
+        "end": 23.801998,
+        "confidence": 0.9954427,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Anyhow,"
+       },
+       {
+        "word": "i'd",
+        "start": 23.801998,
+        "end": 23.962,
+        "confidence": 0.74902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "I'd"
+       },
+       {
+        "word": "better",
+        "start": 23.962,
+        "end": 24.122,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "better"
+       },
+       {
+        "word": "go",
+        "start": 24.122,
+        "end": 24.442,
+        "confidence": 0.97631836,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "go."
+       },
+       {
+        "word": "i'm",
+        "start": 24.442,
+        "end": 24.602,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "I'm"
+       },
+       {
+        "word": "late",
+        "start": 24.602,
+        "end": 24.842,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "late"
+       },
+       {
+        "word": "for",
+        "start": 24.842,
+        "end": 25.001999,
+        "confidence": 0.99902344,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "for"
+       },
+       {
+        "word": "work",
+        "start": 25.001999,
+        "end": 25.641998,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "work."
+       },
+       {
+        "word": "lovely",
+        "start": 25.882,
+        "end": 26.282,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Lovely"
+       },
+       {
+        "word": "to",
+        "start": 26.282,
+        "end": 26.522,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "to"
+       },
+       {
+        "word": "see",
+        "start": 26.522,
+        "end": 26.682,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "see"
+       },
+       {
+        "word": "you",
+        "start": 26.682,
+        "end": 26.921999,
+        "confidence": 1.0,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "you"
+       },
+       {
+        "word": "again",
+        "start": 26.921999,
+        "end": 27.561998,
+        "confidence": 0.9980469,
+        "speaker": 1,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "again."
+       },
+       {
+        "word": "yeah",
+        "start": 27.641998,
+        "end": 28.202,
+        "confidence": 0.94750977,
+        "speaker": 0,
+        "speaker_confidence": 0.7664034,
+        "punctuated_word": "Yeah."
+       },
+       {
+        "word": "likewise",
+        "start": 28.202,
+        "end": 28.762,
+        "confidence": 0.9916992,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Likewise."
+       },
+       {
+        "word": "keep",
+        "start": 28.921999,
+        "end": 29.241999,
+        "confidence": 0.99902344,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "Keep"
+       },
+       {
+        "word": "in",
+        "start": 29.241999,
+        "end": 29.481998,
+        "confidence": 1.0,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "in"
+       },
+       {
+        "word": "touch",
+        "start": 29.481998,
+        "end": 29.721998,
+        "confidence": 0.9995117,
+        "speaker": 0,
+        "speaker_confidence": 1.0,
+        "punctuated_word": "touch."
+       }
+      ],
+      "paragraphs": {
+       "transcript": "\nSpeaker 0: Jane?\n\nSpeaker 1: Mark? Hi. It's been ages since I last saw you. How are you and Jackie?\n\nSpeaker 0: Yeah. Good. Thanks.\n\nSpeaker 1: And your new baby, George, isn't it?\n\nSpeaker 0: You've got a good memory. Yes. He's two now. What about you? Are you still working in the health center?\n\nSpeaker 1: Yes. For the time being, but we're moving in a couple of months. Anyhow, I'd better go. I'm late for work. Lovely to see you again.\n\nSpeaker 0: Yeah. Likewise. Keep in touch.",
+       "paragraphs": [
+        {
+         "sentences": [
+          {
+           "text": "Jane?",
+           "start": 0.71999997,
+           "end": 1.44
+          }
+         ],
+         "speaker": 0,
+         "num_words": 1,
+         "start": 0.71999997,
+         "end": 1.44
+        },
+        {
+         "sentences": [
+          {
+           "text": "Mark?",
+           "start": 1.68,
+           "end": 2.6399999
+          },
+          {
+           "text": "Hi.",
+           "start": 3.04,
+           "end": 3.7599998
+          },
+          {
+           "text": "It's been ages since I last saw you.",
+           "start": 3.84,
+           "end": 6.48
+          },
+          {
+           "text": "How are you and Jackie?",
+           "start": 6.72,
+           "end": 8.4
+          }
+         ],
+         "speaker": 1,
+         "num_words": 15,
+         "start": 1.68,
+         "end": 8.4
+        },
+        {
+         "sentences": [
+          {
+           "text": "Yeah.",
+           "start": 8.4,
+           "end": 8.88
+          },
+          {
+           "text": "Good.",
+           "start": 8.88,
+           "end": 9.2
+          },
+          {
+           "text": "Thanks.",
+           "start": 9.2,
+           "end": 9.759999
+          }
+         ],
+         "speaker": 0,
+         "num_words": 3,
+         "start": 8.4,
+         "end": 9.759999
+        },
+        {
+         "sentences": [
+          {
+           "text": "And your new baby, George, isn't it?",
+           "start": 10.0,
+           "end": 12.32
+          }
+         ],
+         "speaker": 1,
+         "num_words": 7,
+         "start": 10.0,
+         "end": 12.32
+        },
+        {
+         "sentences": [
+          {
+           "text": "You've got a good memory.",
+           "start": 12.595,
+           "end": 14.355
+          },
+          {
+           "text": "Yes.",
+           "start": 14.435,
+           "end": 14.755
+          },
+          {
+           "text": "He's two now.",
+           "start": 14.755,
+           "end": 15.795
+          },
+          {
+           "text": "What about you?",
+           "start": 15.875,
+           "end": 16.755001
+          },
+          {
+           "text": "Are you still working in the health center?",
+           "start": 16.755001,
+           "end": 18.675
+          }
+         ],
+         "speaker": 0,
+         "num_words": 20,
+         "start": 12.595,
+         "end": 18.675
+        },
+        {
+         "sentences": [
+          {
+           "text": "Yes.",
+           "start": 18.995,
+           "end": 19.475
+          },
+          {
+           "text": "For the time being, but we're moving in a couple of months.",
+           "start": 19.475,
+           "end": 22.355
+          },
+          {
+           "text": "Anyhow, I'd better go.",
+           "start": 23.241999,
+           "end": 24.442
+          },
+          {
+           "text": "I'm late for work.",
+           "start": 24.442,
+           "end": 25.641998
+          },
+          {
+           "text": "Lovely to see you again.",
+           "start": 25.882,
+           "end": 27.561998
+          }
+         ],
+         "speaker": 1,
+         "num_words": 26,
+         "start": 18.995,
+         "end": 27.561998
+        },
+        {
+         "sentences": [
+          {
+           "text": "Yeah.",
+           "start": 27.641998,
+           "end": 28.202
+          },
+          {
+           "text": "Likewise.",
+           "start": 28.202,
+           "end": 28.762
+          },
+          {
+           "text": "Keep in touch.",
+           "start": 28.921999,
+           "end": 29.721998
+          }
+         ],
+         "speaker": 0,
+         "num_words": 5,
+         "start": 27.641998,
+         "end": 29.721998
+        }
+       ]
+      }
+     }
+    ]
+   }
+  ],
+  "utterances": [
+   {
+    "start": 0.71999997,
+    "end": 1.44,
+    "confidence": 0.86694336,
+    "channel": 0,
+    "transcript": "Jane?",
+    "words": [
+     {
+      "word": "jane",
+      "start": 0.71999997,
+      "end": 1.44,
+      "confidence": 0.86694336,
+      "speaker": 0,
+      "speaker_confidence": 0.9630824,
+      "punctuated_word": "Jane?"
+     }
+    ],
+    "speaker": 0,
+    "id": "bd1276d4-5186-45d0-a24f-27c68ec1e03d"
+   },
+   {
+    "start": 1.68,
+    "end": 2.6399999,
+    "confidence": 0.85961914,
+    "channel": 0,
+    "transcript": "Mark?",
+    "words": [
+     {
+      "word": "mark",
+      "start": 1.68,
+      "end": 2.6399999,
+      "confidence": 0.85961914,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Mark?"
+     }
+    ],
+    "speaker": 1,
+    "id": "8ba9ede4-69d6-482a-aa24-fc8874480f9f"
+   },
+   {
+    "start": 3.04,
+    "end": 8.4,
+    "confidence": 0.9948556,
+    "channel": 0,
+    "transcript": "Hi. It's been ages since I last saw you. How are you and Jackie?",
+    "words": [
+     {
+      "word": "hi",
+      "start": 3.04,
+      "end": 3.7599998,
+      "confidence": 0.99560547,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Hi."
+     },
+     {
+      "word": "it's",
+      "start": 3.84,
+      "end": 4.16,
+      "confidence": 0.9995117,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "It's"
+     },
+     {
+      "word": "been",
+      "start": 4.16,
+      "end": 4.4,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "been"
+     },
+     {
+      "word": "ages",
+      "start": 4.4,
+      "end": 4.88,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "ages"
+     },
+     {
+      "word": "since",
+      "start": 4.88,
+      "end": 5.2,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "since"
+     },
+     {
+      "word": "i",
+      "start": 5.2,
+      "end": 5.3599997,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "I"
+     },
+     {
+      "word": "last",
+      "start": 5.3599997,
+      "end": 5.6,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "last"
+     },
+     {
+      "word": "saw",
+      "start": 5.6,
+      "end": 5.92,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "saw"
+     },
+     {
+      "word": "you",
+      "start": 5.92,
+      "end": 6.48,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "you."
+     },
+     {
+      "word": "how",
+      "start": 6.72,
+      "end": 6.96,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "How"
+     },
+     {
+      "word": "are",
+      "start": 6.96,
+      "end": 7.2,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "are"
+     },
+     {
+      "word": "you",
+      "start": 7.2,
+      "end": 7.2799997,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "you"
+     },
+     {
+      "word": "and",
+      "start": 7.2799997,
+      "end": 7.52,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "and"
+     },
+     {
+      "word": "jackie",
+      "start": 7.52,
+      "end": 8.4,
+      "confidence": 0.9387207,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Jackie?"
+     }
+    ],
+    "speaker": 1,
+    "id": "805ced2a-7323-4887-af46-52679255050b"
+   },
+   {
+    "start": 8.4,
+    "end": 9.759999,
+    "confidence": 0.9914551,
+    "channel": 0,
+    "transcript": "Yeah. Good. Thanks.",
+    "words": [
+     {
+      "word": "yeah",
+      "start": 8.4,
+      "end": 8.88,
+      "confidence": 0.99316406,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Yeah."
+     },
+     {
+      "word": "good",
+      "start": 8.88,
+      "end": 9.2,
+      "confidence": 0.98168945,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Good."
+     },
+     {
+      "word": "thanks",
+      "start": 9.2,
+      "end": 9.759999,
+      "confidence": 0.9995117,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Thanks."
+     }
+    ],
+    "speaker": 0,
+    "id": "6541b4f9-d70c-4999-b271-e5b2910f82d7"
+   },
+   {
+    "start": 10.0,
+    "end": 13.395,
+    "confidence": 0.9720459,
+    "channel": 0,
+    "transcript": "And your new baby, George, isn't it? You've",
+    "words": [
+     {
+      "word": "and",
+      "start": 10.0,
+      "end": 10.32,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "And"
+     },
+     {
+      "word": "your",
+      "start": 10.32,
+      "end": 10.48,
+      "confidence": 0.99609375,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "your"
+     },
+     {
+      "word": "new",
+      "start": 10.48,
+      "end": 10.719999,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "new"
+     },
+     {
+      "word": "baby",
+      "start": 10.719999,
+      "end": 11.44,
+      "confidence": 0.8625488,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "baby,"
+     },
+     {
+      "word": "george",
+      "start": 11.44,
+      "end": 12.0,
+      "confidence": 0.9321289,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "George,"
+     },
+     {
+      "word": "isn't",
+      "start": 12.0,
+      "end": 12.16,
+      "confidence": 0.9995117,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "isn't"
+     },
+     {
+      "word": "it",
+      "start": 12.16,
+      "end": 12.32,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "it?"
+     },
+     {
+      "word": "you've",
+      "start": 12.595,
+      "end": 13.395,
+      "confidence": 0.986084,
+      "speaker": 0,
+      "speaker_confidence": 0.5,
+      "punctuated_word": "You've"
+     }
+    ],
+    "speaker": 1,
+    "id": "7ba3987a-66d1-4b57-ad21-3a5a66c5a712"
+   },
+   {
+    "start": 13.395,
+    "end": 18.675,
+    "confidence": 0.99349815,
+    "channel": 0,
+    "transcript": "got a good memory. Yes. He's two now. What about you? Are you still working in the health center?",
+    "words": [
+     {
+      "word": "got",
+      "start": 13.395,
+      "end": 13.475,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "got"
+     },
+     {
+      "word": "a",
+      "start": 13.475,
+      "end": 13.635,
+      "confidence": 0.99902344,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "a"
+     },
+     {
+      "word": "good",
+      "start": 13.635,
+      "end": 13.795,
+      "confidence": 0.99902344,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "good"
+     },
+     {
+      "word": "memory",
+      "start": 13.795,
+      "end": 14.355,
+      "confidence": 0.9980469,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "memory."
+     },
+     {
+      "word": "yes",
+      "start": 14.435,
+      "end": 14.755,
+      "confidence": 0.9499512,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Yes."
+     },
+     {
+      "word": "he's",
+      "start": 14.755,
+      "end": 14.995001,
+      "confidence": 0.9902344,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "He's"
+     },
+     {
+      "word": "two",
+      "start": 14.995001,
+      "end": 15.235001,
+      "confidence": 0.9741211,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "two"
+     },
+     {
+      "word": "now",
+      "start": 15.235001,
+      "end": 15.795,
+      "confidence": 0.9995117,
+      "speaker": 0,
+      "speaker_confidence": 0.5,
+      "punctuated_word": "now."
+     },
+     {
+      "word": "what",
+      "start": 15.875,
+      "end": 16.115,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "What"
+     },
+     {
+      "word": "about",
+      "start": 16.115,
+      "end": 16.355,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "about"
+     },
+     {
+      "word": "you",
+      "start": 16.355,
+      "end": 16.755001,
+      "confidence": 0.99609375,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "you?"
+     },
+     {
+      "word": "are",
+      "start": 16.755001,
+      "end": 16.995,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Are"
+     },
+     {
+      "word": "you",
+      "start": 16.995,
+      "end": 17.075,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "you"
+     },
+     {
+      "word": "still",
+      "start": 17.075,
+      "end": 17.315,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "still"
+     },
+     {
+      "word": "working",
+      "start": 17.315,
+      "end": 17.555,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "working"
+     },
+     {
+      "word": "in",
+      "start": 17.555,
+      "end": 17.715,
+      "confidence": 0.9970703,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "in"
+     },
+     {
+      "word": "the",
+      "start": 17.715,
+      "end": 17.795,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "the"
+     },
+     {
+      "word": "health",
+      "start": 17.795,
+      "end": 18.035,
+      "confidence": 0.984375,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "health"
+     },
+     {
+      "word": "center",
+      "start": 18.035,
+      "end": 18.675,
+      "confidence": 0.9890137,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "center?"
+     }
+    ],
+    "speaker": 0,
+    "id": "dfc72369-682a-4e23-9745-27c781929a41"
+   },
+   {
+    "start": 18.995,
+    "end": 22.355,
+    "confidence": 0.96082485,
+    "channel": 0,
+    "transcript": "Yes. For the time being, but we're moving in a couple of months.",
+    "words": [
+     {
+      "word": "yes",
+      "start": 18.995,
+      "end": 19.475,
+      "confidence": 0.73168945,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Yes."
+     },
+     {
+      "word": "for",
+      "start": 19.475,
+      "end": 19.635,
+      "confidence": 0.99609375,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "For"
+     },
+     {
+      "word": "the",
+      "start": 19.635,
+      "end": 19.715,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "the"
+     },
+     {
+      "word": "time",
+      "start": 19.715,
+      "end": 19.955,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "time"
+     },
+     {
+      "word": "being",
+      "start": 19.955,
+      "end": 20.515,
+      "confidence": 0.7668457,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "being,"
+     },
+     {
+      "word": "but",
+      "start": 20.595001,
+      "end": 20.835,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "but"
+     },
+     {
+      "word": "we're",
+      "start": 20.835,
+      "end": 21.075,
+      "confidence": 0.9995117,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "we're"
+     },
+     {
+      "word": "moving",
+      "start": 21.075,
+      "end": 21.395,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "moving"
+     },
+     {
+      "word": "in",
+      "start": 21.395,
+      "end": 21.555,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "in"
+     },
+     {
+      "word": "a",
+      "start": 21.555,
+      "end": 21.715,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "a"
+     },
+     {
+      "word": "couple",
+      "start": 21.715,
+      "end": 21.955,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "couple"
+     },
+     {
+      "word": "of",
+      "start": 21.955,
+      "end": 22.115,
+      "confidence": 0.9980469,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "of"
+     },
+     {
+      "word": "months",
+      "start": 22.115,
+      "end": 22.355,
+      "confidence": 0.9995117,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "months."
+     }
+    ],
+    "speaker": 1,
+    "id": "c3e0a798-269f-4810-a4aa-cfcb0b66bc53"
+   },
+   {
+    "start": 23.241999,
+    "end": 25.641998,
+    "confidence": 0.96497595,
+    "channel": 0,
+    "transcript": "Anyhow, I'd better go. I'm late for work.",
+    "words": [
+     {
+      "word": "anyhow",
+      "start": 23.241999,
+      "end": 23.801998,
+      "confidence": 0.9954427,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Anyhow,"
+     },
+     {
+      "word": "i'd",
+      "start": 23.801998,
+      "end": 23.962,
+      "confidence": 0.74902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "I'd"
+     },
+     {
+      "word": "better",
+      "start": 23.962,
+      "end": 24.122,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "better"
+     },
+     {
+      "word": "go",
+      "start": 24.122,
+      "end": 24.442,
+      "confidence": 0.97631836,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "go."
+     },
+     {
+      "word": "i'm",
+      "start": 24.442,
+      "end": 24.602,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "I'm"
+     },
+     {
+      "word": "late",
+      "start": 24.602,
+      "end": 24.842,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "late"
+     },
+     {
+      "word": "for",
+      "start": 24.842,
+      "end": 25.001999,
+      "confidence": 0.99902344,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "for"
+     },
+     {
+      "word": "work",
+      "start": 25.001999,
+      "end": 25.641998,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "work."
+     }
+    ],
+    "speaker": 1,
+    "id": "535b94cf-7d90-4c74-baf8-e07260dd4391"
+   },
+   {
+    "start": 25.882,
+    "end": 29.721998,
+    "confidence": 0.9935791,
+    "channel": 0,
+    "transcript": "Lovely to see you again. Yeah. Likewise. Keep in touch.",
+    "words": [
+     {
+      "word": "lovely",
+      "start": 25.882,
+      "end": 26.282,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Lovely"
+     },
+     {
+      "word": "to",
+      "start": 26.282,
+      "end": 26.522,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "to"
+     },
+     {
+      "word": "see",
+      "start": 26.522,
+      "end": 26.682,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "see"
+     },
+     {
+      "word": "you",
+      "start": 26.682,
+      "end": 26.921999,
+      "confidence": 1.0,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "you"
+     },
+     {
+      "word": "again",
+      "start": 26.921999,
+      "end": 27.561998,
+      "confidence": 0.9980469,
+      "speaker": 1,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "again."
+     },
+     {
+      "word": "yeah",
+      "start": 27.641998,
+      "end": 28.202,
+      "confidence": 0.94750977,
+      "speaker": 0,
+      "speaker_confidence": 0.7664034,
+      "punctuated_word": "Yeah."
+     },
+     {
+      "word": "likewise",
+      "start": 28.202,
+      "end": 28.762,
+      "confidence": 0.9916992,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Likewise."
+     },
+     {
+      "word": "keep",
+      "start": 28.921999,
+      "end": 29.241999,
+      "confidence": 0.99902344,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "Keep"
+     },
+     {
+      "word": "in",
+      "start": 29.241999,
+      "end": 29.481998,
+      "confidence": 1.0,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "in"
+     },
+     {
+      "word": "touch",
+      "start": 29.481998,
+      "end": 29.721998,
+      "confidence": 0.9995117,
+      "speaker": 0,
+      "speaker_confidence": 1.0,
+      "punctuated_word": "touch."
+     }
+    ],
+    "speaker": 0,
+    "id": "b3501635-56ae-43af-9e54-3f5c907cc237"
+   }
+  ]
+ }
+}
