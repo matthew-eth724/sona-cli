@@ -28,7 +28,7 @@ impl Invocation {
         self.push("-i").push(crate::paths::arg(path))
     }
 
-    /// Shell-quoted, for `va plan` and for humans reading a failure.
+    /// Shell-quoted, for `sona plan` and for humans reading a failure.
     pub fn render(&self) -> String {
         self.args
             .iter()
@@ -48,7 +48,7 @@ impl Invocation {
 /// Runs ffmpeg with stderr captured to a file (so a full pipe cannot deadlock)
 /// and a hard wall-clock timeout.
 pub fn run(inv: &Invocation, timeout: Duration) -> Result<()> {
-    let stderr_path = std::env::temp_dir().join(format!("va-ffmpeg-{}.log", std::process::id()));
+    let stderr_path = std::env::temp_dir().join(format!("sona-ffmpeg-{}.log", std::process::id()));
     let stderr = File::create(&stderr_path)?;
     let mut child = Command::new(&inv.args[0])
         .args(&inv.args[1..])

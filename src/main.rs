@@ -1,4 +1,4 @@
-//! va — a video editing CLI for agents.
+//! sona — a video editing CLI for agents.
 mod cache;
 mod caption;
 mod cli;

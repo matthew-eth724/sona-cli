@@ -2,7 +2,7 @@
 
 ## Sub-features
 
-- `init` — create `va.json` with canvas size and fps.
+- `init` — create `sona.json` with canvas size and fps.
 - `add` — append or insert a clip, optional `--from`/`--to`/`--speed`/`--at`/`--fill`.
 - `list` / `inspect` — the timeline as JSON, plus `warnings[]`.
 - `trim` — change a clip's source in/out points.
@@ -11,19 +11,19 @@
 
 ## How to get to it (user POV)
 
-Any terminal in a scratch directory. `va` reads `va.json` from the current
+Any terminal in a scratch directory. `sona` reads `sona.json` from the current
 directory unless `--project` is given.
 
 ## Driving it with bash + JSON
 
 ```bash
-$VA init --size 1280x720 --fps 30
-$VA add ./clip-a.mp4 --from 1s --to 6s        # 5s of a 6s source
-$VA add ./clip-b.mp4 --speed 2.0              # 5s source becomes 2.5s
-$VA list | jq '.duration, [.clips[].id]'
-$VA move clip_2 0                             # clip_2 now first
-$VA trim clip_1 --from 2s
-$VA inspect | jq '.warnings'
+$SONA init --size 1280x720 --fps 30
+$SONA add ./clip-a.mp4 --from 1s --to 6s        # 5s of a 6s source
+$SONA add ./clip-b.mp4 --speed 2.0              # 5s source becomes 2.5s
+$SONA list | jq '.duration, [.clips[].id]'
+$SONA move clip_2 0                             # clip_2 now first
+$SONA trim clip_1 --from 2s
+$SONA inspect | jq '.warnings'
 ```
 
 ## Gotchas

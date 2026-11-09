@@ -9,14 +9,14 @@
 ## How to get to it (user POV)
 
 ```bash
-$VA frames --at 1,3 --sheet 8 -o .va/preview
+$SONA frames --at 1,3 --sheet 8 -o .sona/preview
 # {"frames":[{"path":".../at-00001-000.png"}, ..., {"kind":"sheet","path":".../sheet.png"}]}
 ```
 
 ## Driving it with bash + JSON
 
 ```bash
-out=$($VA frames --at 1,3 --sheet 8 -o .va/preview)
+out=$($SONA frames --at 1,3 --sheet 8 -o .sona/preview)
 echo "$out" | jq -r '.frames[].path' | while read -r p; do
   [ -s "$p" ] && echo "ok $p" || echo "MISSING $p"
 done
@@ -24,7 +24,7 @@ done
 
 ## Gotchas
 
-- Frames come from the **last plan step's cached output**, so `va render` must
+- Frames come from the **last plan step's cached output**, so `sona render` must
   run first; otherwise expect `nothing rendered yet`.
 - Stills are re-encoded at 768px wide for vision-model token cost; do not use
   them to judge pixel-exact quality.

@@ -1,11 +1,11 @@
 ---
 name: verify
-description: Drive the `va` video-editing CLI to prove behavior on this repo — build the binary, create an isolated scratch project, and capture JSON, ffprobe facts, frame stills and pixel-diff evidence. Use when verifying a change to va, reproducing a render or cache bug, or proving a timeline/caption/overlay feature works end to end.
+description: Drive the `sona` video-editing CLI to prove behavior on this repo — build the binary, create an isolated scratch project, and capture JSON, ffprobe facts, frame stills and pixel-diff evidence. Use when verifying a change to sona, reproducing a render or cache bug, or proving a timeline/caption/overlay feature works end to end.
 ---
 
-# Verify `va`
+# Verify `sona`
 
-`va` is a Rust CLI (binary at `target/debug/va`) that compiles a `va.json`
+`sona` is a Rust CLI (binary at `target/debug/sona`) that compiles a `sona.json`
 project into ffmpeg calls. Everything it prints on stdout is one JSON object.
 There is no UI and no server: *driving* it means running commands in a scratch
 directory and reading files, exit codes and pixels.
@@ -18,18 +18,18 @@ scratch project per drive.
 ```bash
 cd <repo-root>
 cargo build                       # ~10s cold, <1s warm
-VA="$PWD/target/debug/va"
+SONA="$PWD/target/debug/sona"
 
-SCRATCH=$(mktemp -d /tmp/va-verify.XXXXXX)
+SCRATCH=$(mktemp -d /tmp/sona-verify.XXXXXX)
 .claude/skills/verify/scripts/make-media.sh "$SCRATCH"
 cd "$SCRATCH"
-$VA init --size 1280x720 --fps 30
+$SONA init --size 1280x720 --fps 30
 ```
 
 Ready when this prints `"ok":true`:
 
 ```bash
-$VA doctor
+$SONA doctor
 ```
 
 Ready means more than "the binary exists": `doctor` must report
@@ -37,14 +37,14 @@ Ready means more than "the binary exists": `doctor` must report
 `ffmpeg` version string. If any is false, stop — renders will fail on a filter,
 not on your change.
 
-Each drive gets its own `$SCRATCH`. Two drives never share a `va.json` or a
-`.va/` cache, so they can run side by side. Never drive in the repo root: `va`
-writes `va.json`, `.va/cache/` and `out.mp4` into the current directory.
+Each drive gets its own `$SCRATCH`. Two drives never share a `sona.json` or a
+`.sona/` cache, so they can run side by side. Never drive in the repo root: `sona`
+writes `sona.json`, `.sona/cache/` and `out.mp4` into the current directory.
 
 ## Doctor
 
 ```bash
-$VA doctor                       # ffmpeg filters/encoders, resolved font, keys
+$SONA doctor                       # ffmpeg filters/encoders, resolved font, keys
 ffprobe -v error -show_entries format=duration -of csv=p=0 "$SCRATCH/clip-a.mp4"
 ```
 
@@ -60,26 +60,26 @@ logs. `jq` is available.
 cd "$SCRATCH"
 
 # timeline
-$VA add ./clip-a.mp4 --from 1s --to 6s      # --from/--to are SOURCE times
-$VA add ./clip-b.mp4 --speed 1.5
-$VA list                                     # {clips:[...],duration:"00:00:08.333"}
-$VA trim clip_2 --to 4s
-$VA move clip_2 0
-$VA rm clip_2
-$VA inspect                                  # summary + "warnings"
+$SONA add ./clip-a.mp4 --from 1s --to 6s      # --from/--to are SOURCE times
+$SONA add ./clip-b.mp4 --speed 1.5
+$SONA list                                     # {clips:[...],duration:"00:00:08.333"}
+$SONA trim clip_2 --to 4s
+$SONA move clip_2 0
+$SONA rm clip_2
+$SONA inspect                                  # summary + "warnings"
 
 # layers
-$VA text "Ship faster" --from 0.5 --to 3 --pos bottom --size 48
-$VA audio ./music.mp3 --gain -14             # negative needs no `--`
-$VA caption ./subs.srt                       # {changed:["captions"],cues:2}
+$SONA text "Ship faster" --from 0.5 --to 3 --pos bottom --size 48
+$SONA audio ./music.mp3 --gain -14             # negative needs no `--`
+$SONA caption ./subs.srt                       # {changed:["captions"],cues:2}
 
 # compile and render
-$VA plan | jq '.steps[] | {label, cached, argv: .argv[0:6]}'
-$VA render -o out.mp4
+$SONA plan | jq '.steps[] | {label, cached, argv: .argv[0:6]}'
+$SONA render -o out.mp4
 # {"steps":{"total":4,"ran":4,"reused":0}} on a cold render
 
 # look at the result
-$VA frames --at 1,3 --sheet 8 -o .va/preview
+$SONA frames --at 1,3 --sheet 8 -o .sona/preview
 ```
 
 Stable handles: command names and the JSON keys (`steps.ran`,
@@ -99,10 +99,10 @@ Capture, per proof:
 
 1. **Command + JSON** — `cmd.txt` with the exact commands, `out.json` with stdout.
 2. **Timeline facts** — `scripts/facts.sh out.mp4` (duration, codecs, size, fps).
-3. **Pixels** — the stills from `va frames`, or a crop diff for a specific claim.
-4. **Side effects** — `ls .va/cache` counts, `steps.ran`/`steps.reused`, exit code.
+3. **Pixels** — the stills from `sona frames`, or a crop diff for a specific claim.
+4. **Side effects** — `ls .sona/cache` counts, `steps.ran`/`steps.reused`, exit code.
 
-Prove the user path, not an internal one. `va render` exiting 0 is not proof the
+Prove the user path, not an internal one. `sona render` exiting 0 is not proof the
 overlay appeared: prove it in pixels.
 
 **Pixel proof for anything layered (text, captions):** render the same project
@@ -135,7 +135,7 @@ normalize + concat + decorate).
 rm -rf "$SCRATCH"        # only what this drive created
 ```
 
-Never kill by process name and never `rm -rf` a path you did not create. `va`
+Never kill by process name and never `rm -rf` a path you did not create. `sona`
 leaves no processes behind. Confirm the evidence survived:
 
 ```bash
@@ -150,13 +150,13 @@ ls <repo-root>/verification/<date>-<what>/
   filters — report it, do not accept the fast path.
 - **A failed ffmpeg step used to leave a zero-byte cache file that the next run
   trusted.** If a render "succeeds" in 0 steps and the output is 0 bytes or
-  silent, check `ls -la .va/cache` before blaming the encoder.
+  silent, check `ls -la .sona/cache` before blaming the encoder.
 - **`--from`/`--to` on `add` are positions inside the source file**, not on the
   timeline. `--to 6s` on a 6s clip plus `--from 1s` yields 5s of output.
 - **`--to` past the end of the media is clamped**, with a `clip_past_media`
   warning. Mutating commands return their own warnings, so read them there.
 - **Source paths are canonicalized when added**, so a project keeps working if
-  the scratch dir moves. `--project /elsewhere/va.json` works from any cwd.
+  the scratch dir moves. `--project /elsewhere/sona.json` works from any cwd.
 - **Paths inside filters must be relative** (`src/paths.rs`). A `C:\` path
   unescaped becomes "No such filter", not a missing-file error. `cargo test`
   covers this; do not bypass `filter_escape`.
@@ -164,8 +164,8 @@ ls <repo-root>/verification/<date>-<what>/
   every `drawtext` fail with `no_font`.
 - **The 10-minute ASR cap sits below the 30-minute hard refusal**, so a long
   file hits `asr_over_limit` (confirmable with `--yes`) before `asr_too_long`.
-- **`va frames` renders from the last plan step's cache**, so it needs a render
-  first: `nothing rendered yet (run 'va render')` is expected on a fresh project.
+- **`sona frames` renders from the last plan step's cache**, so it needs a render
+  first: `nothing rendered yet (run 'sona render')` is expected on a fresh project.
 
 ## Helpers
 

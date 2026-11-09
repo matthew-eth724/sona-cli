@@ -1,4 +1,4 @@
-# va — a video editing CLI for agents
+# sona — a video editing CLI for agents
 
 Design + rationale. Status: sketch, pre-implementation.
 
@@ -38,28 +38,28 @@ Constraints that shaped the design:
 ### Quickstart
 
 ```console
-$ va init --size 1920x1080 --fps 30
-wrote va.json
+$ sona init --size 1920x1080 --fps 30
+wrote sona.json
 
-$ va add intro.mp4
+$ sona add intro.mp4
 clip_1  intro.mp4  00:00:08.240
 
-$ va add demo.webm --from 12s --to 28s --speed 1.5
+$ sona add demo.webm --from 12s --to 28s --speed 1.5
 clip_2  demo.webm  00:00:10.666
 
-$ va add outro.mp4 --at 1        # insert at the front
+$ sona add outro.mp4 --at 1        # insert at the front
 clip_3  outro.mp4  00:00:04.000
 
-$ va text "Ship faster" --from 0 --to 4 --pos center --style bold
+$ sona text "Ship faster" --from 0 --to 4 --pos center --style bold
 text_1
 
-$ va caption subs.srt
+$ sona caption subs.srt
 captions  42 cues
 
-$ va audio music.mp3 --gain -18 --duck
+$ sona audio music.mp3 --gain -18 --duck
 audio_1
 
-$ va render -o out.mp4
+$ sona render -o out.mp4
 ```
 
 ### The three call sites that matter
@@ -67,7 +67,7 @@ $ va render -o out.mp4
 **1. One-shot render from a spec** (agent generates a whole job, runs it once):
 
 ```console
-$ va render --spec job.json -o out.mp4
+$ sona render --spec job.json -o out.mp4
 {"ok":true,"out":"out.mp4","duration":"00:00:42.500","size":"1920x1080",
  "steps":{"total":9,"ran":2,"reused":7},"warnings":[]}
 ```
@@ -75,17 +75,17 @@ $ va render --spec job.json -o out.mp4
 **2. Iterative edit** (the common case — agent tweaks one clip, re-renders):
 
 ```console
-$ va list
+$ sona list
 clip_1  00:00:00.000-00:00:08.240  intro.mp4
 clip_2  00:00:08.240-00:00:18.906  demo.webm  (1.5x, from 12s)
 clip_3  00:00:18.906-00:00:22.906  outro.mp4
 
-$ va trim clip_2 --to 16s
+$ sona trim clip_2 --to 16s
 {"ok":true,"changed":["clip_2"],"duration":"00:00:20.906",
  "invalidated":1,"warnings":[{"code":"caption_past_end","at":"captions[31]",
- "message":"cue ends 1.28s after the last clip","fix":"va caption trim captions[31]"}]}
+ "message":"cue ends 1.28s after the last clip","fix":"sona caption trim captions[31]"}]}
 
-$ va render -o out.mp4
+$ sona render -o out.mp4
 {"ok":true,...,"steps":{"total":9,"ran":3,"reused":6}}
 ```
 
@@ -95,11 +95,11 @@ Both properties are the point.
 **3. Look at the result** (the verification loop the agent actually needs):
 
 ```console
-$ va frames --at 2s,8s --sheet 12 -o .va/preview
+$ sona frames --at 2s,8s --sheet 12 -o .sona/preview
 {"ok":true,"frames":[
- {"path":".va/preview/at-2.000.png","time":"00:00:02.000"},
- {"path":".va/preview/at-8.000.png","time":"00:00:08.000"},
- {"path":".va/preview/sheet-01.png","times":["00:00:00.000",...]}]}
+ {"path":".sona/preview/at-2.000.png","time":"00:00:02.000"},
+ {"path":".sona/preview/at-8.000.png","time":"00:00:08.000"},
+ {"path":".sona/preview/sheet-01.png","times":["00:00:00.000",...]}]}
 ```
 
 The agent reads PNGs as images. Stills are cheap in tokens and the only way an
@@ -108,26 +108,26 @@ agent perceives frame content; 6–12 stills or one contact sheet per review pas
 **4. Transcribe** (one flag to choose the backend, one shape to reason about):
 
 ```console
-$ va caption auto --provider whisper --model small
+$ sona caption auto --provider whisper --model small
 {"ok":true,"provider":"whisper","segments":184,"cues":42,"audio":"demo.webm"}
 
-$ va caption auto --provider deepgram --language en
-$ va caption auto --provider gemini --model gemini-transcribe
+$ sona caption auto --provider deepgram --language en
+$ sona caption auto --provider gemini --model gemini-transcribe
 ```
 
 Provider credentials come from the environment only (`GEMINI_API_KEY`,
-`DEEPGRAM_API_KEY`) and never enter `va.json`. Without `--provider`, the first
+`DEEPGRAM_API_KEY`) and never enter `sona.json`. Without `--provider`, the first
 configured backend wins; with none configured, the error names all three paths.
-Transcripts cache under `.va/asr/` keyed by source hash + provider + language, so
+Transcripts cache under `.sona/asr/` keyed by source hash + provider + language, so
 re-running never re-pays for a transcription.
 
 Anything over **10 minutes of audio is refused** until confirmed:
 
 ```console
-$ va caption auto --provider deepgram
+$ sona caption auto --provider deepgram
 {"ok":false,"error":{"code":"asr_over_limit",
  "message":"audio is 01:12:30, limit is 00:10:00",
- "fix":"va caption auto --yes   (or --max-duration 2h)"}}
+ "fix":"sona caption auto --yes   (or --max-duration 2h)"}}
 ```
 
 Exit code `2`, nothing uploaded, nothing charged. `--yes` overrides for one call;
@@ -169,7 +169,7 @@ src/paths.rs       platform-correct argv and filter-string escaping
 src/report.rs      the JSON envelope and Diagnostic
 ```
 
-`lib.rs` is absent. There is no public API but the binary and `va.json`.
+`lib.rs` is absent. There is no public API but the binary and `sona.json`.
 Tests reach internals through `mod` under `#[cfg(test)]` and through argv
 snapshots, not through exports — `per importable-internals`.
 
@@ -213,7 +213,7 @@ pub struct TextOverlay { id, content: String, at: TimeRange, anchor: Anchor, sty
 ```
 
 ```rust
-// project.rs — the only code that writes va.json.
+// project.rs — the only code that writes sona.json.
 pub struct Store { path: PathBuf, project: Project }
 impl Store {
     pub fn open(path: &Path) -> Result<Store>;   // parse + validate on every open
@@ -264,7 +264,7 @@ pub struct Step {
 ```rust
 // ffmpeg.rs — argv only. No shell, no string interpolation into a command.
 pub struct Invocation { pub program: &'static str, pub args: Vec<OsString> }
-impl Invocation { pub fn render(&self) -> String; }        // shell-quoted, for `va plan`
+impl Invocation { pub fn render(&self) -> String; }        // shell-quoted, for `sona plan`
 pub fn run(inv: &Invocation, timeout: Duration) -> Result<Completed>;
 pub fn capabilities() -> Capabilities;                     // cached; hard-fails on missing libass/x264
 ```
@@ -278,12 +278,12 @@ pub struct Diagnostic { pub code: &'static str, pub at: String, pub message: Str
 ### Data flow
 
 ```
-va.json ──load+validate──► Project ──plan(project, media)──► RenderPlan{argv[]}
+sona.json ──load+validate──► Project ──plan(project, media)──► RenderPlan{argv[]}
                                    │                          │
                                    ▼                          ▼
                              MediaIndex (probe cache)    cache lookup by StepKey
                                                               │
-                                        miss ──► ffmpeg run ──► .va/cache/<key>.mp4
+                                        miss ──► ffmpeg run ──► .sona/cache/<key>.mp4
                                         hit  ──────────────────┘
                                                               ▼
                                                     assemble ──► out.mp4 ──verify──► Report
@@ -315,15 +315,15 @@ the split also makes each clip independently cacheable and re-encodable.
 
 **Cache key = hash of the resolved step spec**, where "resolved" includes each
 source's `(path, size, mtime, probe hash)` and the ffmpeg version string. Edit
-one clip, re-render 2 of 9 steps. `.va/` is pure cache — deletable at any time,
+one clip, re-render 2 of 9 steps. `.sona/` is pure cache — deletable at any time,
 never authoritative. `per idempotent-operations`.
 
 **The project file is the API; the CLI is sugar over it.** An agent may hand-edit
-`va.json` or run `va add`; both are legal because every command parses and
+`sona.json` or run `sona add`; both are legal because every command parses and
 validates the file on open, and nothing lives outside it. This is one task with
 two paths on purpose — the alternative (CLI-only mutation) breaks the moment an
 agent uses `jq`, which it will. The price is that `validate()` must be complete;
-that is the trade. `per boundary-discipline`: `va.json` is the boundary, so it is
+that is the trade. `per boundary-discipline`: `sona.json` is the boundary, so it is
 parsed into domain types there and nowhere else.
 
 **Types carry the invariants, validation carries the rest.** Illegal states that
@@ -346,7 +346,7 @@ one enum arm — `per model-the-domain`.
 being ignored.** The three backends do not offer the same features: Gemini
 rejects `custom_vocabulary` when word timestamps are on, and its `smart` mode is
 incompatible with timestamps entirely. So each provider exposes `Caps`, and
-`va caption auto --vocab terms.txt --provider gemini` fails with
+`sona caption auto --vocab terms.txt --provider gemini` fails with
 `asr_unsupported: gemini cannot combine vocabulary hints with word timestamps`
 rather than quietly dropping the flag. A silently ignored flag is the class of
 bug an agent cannot detect.
@@ -430,7 +430,7 @@ config invites an agent to quietly raise it, `--yes` does not. `per
 boundary-discipline` — the check sits at the one door all three providers walk
 through.
 
-**`va plan` prints the argv it would run.** This is the debugging lever and the
+**`sona plan` prints the argv it would run.** This is the debugging lever and the
 test surface: golden snapshots assert argv without running ffmpeg, so the
 compiler is testable in milliseconds. An agent that reads 30 argv lines can
 usually see its own bug; an agent that reads ffmpeg stderr cannot.
@@ -439,7 +439,7 @@ usually see its own bug; an agent that reads ffmpeg stderr cannot.
 document shape, and one JSON envelope. Hidden behind it: filter-graph
 construction, VFR/SAR/rotation normalization, ASS generation and font
 resolution, step caching, parallel execution, output verification. A caller who
-learns the CLI never needs to learn the graph, and a caller who reads `va plan`
+learns the CLI never needs to learn the graph, and a caller who reads `sona plan`
 output never needs to learn ffmpeg — the two views are independent. No option
 exposes an internal stage: `--preview` changes quality, not pipeline shape.
 
@@ -465,7 +465,7 @@ crash/partial-failure behavior:
   edit: the worst token and wall-clock cost on exactly the loop this tool serves.
 
 A is the base. From B it keeps atomic write-back plus idempotent, `--dry-run`-able
-render, without the log. From C it keeps `va render --spec` for the
+render, without the log. From C it keeps `sona render --spec` for the
 generate-a-whole-job-in-one-shot case, so a caller never has to create a project
 it will not revisit.
 
@@ -477,7 +477,7 @@ The three candidates above were written and screened inline against
 
 Red flags screened: *two ways to do one task* and *split ownership* are both
 live concerns here and are addressed in "load-bearing decisions" (file and CLI
-converge on one validated document; `.va/` is cache only, owned by `cache.rs`).
+converge on one validated document; `.sona/` is cache only, owned by `cache.rs`).
 No hand-synced lists: presets, overlay kinds, and style refs each have one list.
 
 ## Tradeoffs accepted
@@ -498,10 +498,10 @@ No hand-synced lists: presets, overlay kinds, and style refs each have one list.
 exchange for never shipping model weights and never forcing a sandbox with no
 outbound network to go without captions.
 - We accept network I/O in a tool that was otherwise offline and deterministic,
-  confined to `va caption auto`, and make its results cacheable so a successful
+  confined to `sona caption auto`, and make its results cacheable so a successful
 transcription can be committed and replayed.
 - We accept absolute paths resolving against a fixed working directory so filter
-  escaping stays trivial, in exchange for `va` chdir-ing its ffmpeg children.
+  escaping stays trivial, in exchange for `sona` chdir-ing its ffmpeg children.
 
 ## Alternatives considered
 
@@ -543,8 +543,8 @@ Deviations accepted during fill-in:
 - **No render parallelism yet.** The sketch allowed it; steps are executed
   serially because correctness came first and the cache already removes most of
   the cost.
-- **Renders still land in `.va/cache/` as intermediates.** Pruning is a later
-  concern; `.va/` remains deletable at any time.
+- **Renders still land in `.sona/cache/` as intermediates.** Pruning is a later
+  concern; `.sona/` remains deletable at any time.
 
 Verified on real footage (`resource/video1.mp4`, 35.7 s portrait 576x1024@30,
 aac 44.1 kHz) rather than only on synthetic testsrc:
@@ -574,7 +574,7 @@ transition/xfade between clips, `--preview` quality tier.
 | --- | --- |
 | Project file is the API; CLI is sugar | edit cost is the token cost that matters |
 | Two-stage normalize→assemble render | heterogeneous sources, per-clip cache |
-| `va plan` prints argv | debugging lever + millisecond tests |
+| `sona plan` prints argv | debugging lever + millisecond tests |
 | 10 min ASR cap, `--yes` overrides | live calls on a 31 s clip |
 | >30 min refused, not chunked | Gemini limits word timestamps to 30 min/request |
 | Whisper via external binary | no C dependency on three platforms |
@@ -587,12 +587,12 @@ transition/xfade between clips, `--preview` quality tier.
 2. **Windows CI** — cross-platform argv tests can run on Linux; do we need a
    real Windows runner before v1, or after?
 3. **Font determinism** — 143 system fonts make `style` presets machine-dependent.
-   Risk: agent renders on one box, human reviews on another. Proposal: `va doctor`
+   Risk: agent renders on one box, human reviews on another. Proposal: `sona doctor`
    prints resolved font file paths; presets pin to a bundled font later.
 4. **Provider choice is a quality decision, not a cost one.** With the correct
    parameters the two providers agree on speakers (`0`/`1` vs `spk:0`/`spk:1` for
    the same lines), but still differ on word count (77 vs 78) and timing by
-   ~100 ms. So `va caption auto` records `source.provider` in the project and
+   ~100 ms. So `sona caption auto` records `source.provider` in the project and
    never blends two providers' output.
 5. **Risk — the 10-minute *processing* limit, not audio length.** Deepgram
    returns `504 Gateway Timeout` when a pre-recorded request takes longer than
@@ -600,13 +600,13 @@ transition/xfade between clips, `--preview` quality tier.
    may or may not fit inside that budget on a loaded day, so `caption auto`
    needs a timeout with a diagnostic that names the callback API as the fix
    rather than hanging an agent.
-6. **Risk — verification blindness.** `va frames` gives frames *with overlays
+6. **Risk — verification blindness.** `sona frames` gives frames *with overlays
    burned*, which is what we want, but it re-renders. Mitigation: stills render
    from the last assemble cache entry at low priority and are not counted
    against the step cache.
 
 ## Next implementation step
 
-`time.rs` + `paths.rs` + `project.rs` + `va plan` with golden argv snapshots,
+`time.rs` + `paths.rs` + `project.rs` + `sona plan` with golden argv snapshots,
 including the Windows-escaped case — the compiler skeleton and the one
 platform-specific trap, both testable before any video is encoded.

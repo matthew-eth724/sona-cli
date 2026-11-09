@@ -1,6 +1,6 @@
 # For agents
 
-How to drive `va` without wasting tokens or trusting yourself.
+How to drive `sona` without wasting tokens or trusting yourself.
 
 ## The loop
 
@@ -8,13 +8,13 @@ How to drive `va` without wasting tokens or trusting yourself.
 doctor → inspect → edit → render → frames → look
 ```
 
-1. `va doctor` once per machine. If `libx264`, `libass` or `drawtext` is false,
+1. `sona doctor` once per machine. If `libx264`, `libass` or `drawtext` is false,
    or `font` is null, stop: every render will fail on a filter, not on your edit.
-2. `va inspect` before editing. It is cheap and returns `duration`, the clip
+2. `sona inspect` before editing. It is cheap and returns `duration`, the clip
    list and `warnings[]`.
 3. Make the smallest edit that expresses the change. One command, one concept.
-4. `va render -o out.mp4`. Read `steps.ran` / `steps.reused`.
-5. `va frames --at <times>` when the change is visual, and actually look at the
+4. `sona render -o out.mp4`. Read `steps.ran` / `steps.reused`.
+5. `sona frames --at <times>` when the change is visual, and actually look at the
    PNGs.
 
 ## Rules
@@ -41,13 +41,13 @@ and without it — see below.
 - One clip edit: `ran: 3` (normalize + concat + decorate).
 
 If `ran: 0` follows a content change, the cache key is stale: that is a bug in
-`va`, and the render is stale too. Do not report the fast path as success.
+`sona`, and the render is stale too. Do not report the fast path as success.
 
-**`plan` before you guess.** `va plan` prints the exact ffmpeg argv per step and
+**`plan` before you guess.** `sona plan` prints the exact ffmpeg argv per step and
 costs no ffmpeg run. When a render looks wrong, the argv usually shows why in
 one line.
 
-**Do not invent flags.** `va <command> --help` is short and authoritative; a
+**Do not invent flags.** `sona <command> --help` is short and authoritative; a
 guessed flag is a 5-exit-code round trip.
 
 ## Editing the file vs running a command
@@ -64,9 +64,9 @@ canonicalizes; `trim`, since it is easier to get the units right).
 Same project, two renders, one difference:
 
 ```bash
-va render -o with.mp4
-jq 'del(.tracks.overlays)' va.json > bare.json
-va --project bare.json render -o without.mp4
+sona render -o with.mp4
+jq 'del(.tracks.overlays)' sona.json > bare.json
+sona --project bare.json render -o without.mp4
 # diff the same timestamp and the same crop
 .claude/skills/verify/scripts/psnr-ab.sh with.mp4 without.mp4 1.5 "1080:120:0:600"
 ```
@@ -89,26 +89,26 @@ ffmpeg -hide_banner -i with.mp4 -i without.mp4 -filter_complex \
   Six to twelve images is a normal review pass; a 12-tile contact sheet is one
   image.
 - `inspect` and `list` are small. `plan` is large: request it, do not loop it.
-- Never dump `va.json` into context. Read the fields you need with `jq`.
+- Never dump `sona.json` into context. Read the fields you need with `jq`.
 
 ## Failure ladder
 
 | code | what to do |
 | --- | --- |
-| `project_invalid` | the edit broke the file. `va inspect` names the field. Re-run the last command. |
+| `project_invalid` | the edit broke the file. `sona inspect` names the field. Re-run the last command. |
 | `media_missing` | a path is wrong or a file moved. Re-`add` with the correct path. |
-| `ffmpeg_failed` | read the message, then `va plan` and look at the argv for that step. |
+| `ffmpeg_failed` | read the message, then `sona plan` and look at the argv for that step. |
 | `ffmpeg timed out` | raise `--timeout`, or shorten the timeline. |
 | `no_font` | `doctor` shows no resolvable font; install one or fix fontconfig. |
 | `usage` | the flags are wrong; `--help` beats guessing. |
 
 ## When to stop and ask a human
 
-`va` can tell you a file is valid and render it. It cannot tell you the cut is
+`sona` can tell you a file is valid and render it. It cannot tell you the cut is
 good, the caption text is right, or that "Ship faster" fits the brand. Do the
 mechanical work; surface content decisions with a still and a one-line question.
 
-## What `va` cannot do yet
+## What `sona` cannot do yet
 
 Automatic transcription, image overlays, transitions between clips, multi-track
 compositing, keyframes, colour grading, GPU encoding. If a task needs one of

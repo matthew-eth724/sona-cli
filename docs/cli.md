@@ -1,12 +1,12 @@
 # CLI reference
 
 ```
-va [--project <path>] <command> [options]
+sona [--project <path>] <command> [options]
 ```
 
-`--project` is global and defaults to `va.json` in the current directory. Paths
+`--project` is global and defaults to `sona.json` in the current directory. Paths
 inside the project resolve against the project file's directory, so
-`va --project /elsewhere/va.json` works from any cwd.
+`sona --project /elsewhere/sona.json` works from any cwd.
 
 ## Output contract
 
@@ -15,7 +15,7 @@ failure stdout still carries the object, and stderr repeats two lines:
 
 ```
 media_missing: no such file: /nope.mp4
-fix: va add ./nope.mp4
+fix: sona add ./nope.mp4
 ```
 
 Exit codes: `0` ok, `2` project/precondition, `3` media, `4` ffmpeg, `5` usage.
@@ -34,7 +34,7 @@ omitted when empty.
 
 Accepted anywhere a time is expected: `4`, `4s`, `4.5s`, `250ms`,
 `00:00:04.500`, `1:02.5`. The fractional part is optional everywhere.
-`va frames --at` additionally accepts percentages of the timeline: `25%`.
+`sona frames --at` additionally accepts percentages of the timeline: `25%`.
 
 ## Geometry
 
@@ -47,19 +47,19 @@ Accepted anywhere a time is expected: `4`, `4s`, `4.5s`, `250ms`,
 ## init
 
 ```
-va init [--size 1920x1080] [--fps 30]
+sona init [--size 1920x1080] [--fps 30]
 ```
 
-Creates `va.json` and `.va/`. Fails if the file exists.
+Creates `sona.json` and `.sona/`. Fails if the file exists.
 
 ```json
-{"ok": true, "project": "va.json", "canvas": {"width": 1920, "height": 1080, "fps": "30"}}
+{"ok": true, "project": "sona.json", "canvas": {"width": 1920, "height": 1080, "fps": "30"}}
 ```
 
 ## add
 
 ```
-va add <file>... [--from <t>] [--to <t>] [--speed <n>] [--at <index>] [--fill]
+sona add <file>... [--from <t>] [--to <t>] [--speed <n>] [--at <index>] [--fill]
 ```
 
 Appends clips, or inserts them at `--at`. `--from`/`--to` are offsets **inside
@@ -82,7 +82,7 @@ Notes:
 ## list
 
 ```
-va list
+sona list
 ```
 
 ```json
@@ -96,7 +96,7 @@ va list
 ## trim
 
 ```
-va trim <id> [--from <t>] [--to <t>]
+sona trim <id> [--from <t>] [--to <t>]
 ```
 
 Moves the clip's source in/out points. Omitted side is left alone. `--to` must be
@@ -105,7 +105,7 @@ after `--from`.
 ## speed
 
 ```
-va speed <id> <factor>
+sona speed <id> <factor>
 ```
 
 Pitch-preserving speed change. Factors outside 0.5–2.0 are chained into multiple
@@ -114,7 +114,7 @@ Pitch-preserving speed change. Factors outside 0.5–2.0 are chained into multip
 ## move
 
 ```
-va move <id> <index>
+sona move <id> <index>
 ```
 
 Moves a clip to a 0-based position. An index past the end appends.
@@ -122,7 +122,7 @@ Moves a clip to a 0-based position. An index past the end appends.
 ## rm
 
 ```
-va rm <id>
+sona rm <id>
 ```
 
 Removes a clip. Removing the last clip leaves an empty project; `render` then
@@ -131,7 +131,7 @@ fails with `2`.
 ## text
 
 ```
-va text "<content>" --from <t> --to <t> [--pos bottom|center|top] [--size 48] [--color white]
+sona text "<content>" --from <t> --to <t> [--pos bottom|center|top] [--size 48] [--color white]
 ```
 
 Burns text into the frame for the given window. `--color` takes any ffmpeg
@@ -146,7 +146,7 @@ A window past the end of the timeline is a `text_past_end` warning, not an error
 ## audio
 
 ```
-va audio <file> [--gain <db>]
+sona audio <file> [--gain <db>]
 ```
 
 Sets the music bed played under the clips, mixed at `duration=first` so it never
@@ -156,7 +156,7 @@ bed; there is exactly one.
 ## caption
 
 ```
-va caption <file.srt>
+sona caption <file.srt>
 ```
 
 Attaches an SRT and burns it in during the assemble pass. The cue count comes
@@ -170,7 +170,7 @@ problem.
 ## inspect
 
 ```
-va inspect
+sona inspect
 ```
 
 `list` plus canvas, overlay/audio/caption presence, and `warnings[]`. Use it
@@ -179,7 +179,7 @@ before a render to learn what is wrong without spawning ffmpeg.
 ## plan
 
 ```
-va plan
+sona plan
 ```
 
 The exact argv per step, whether each is already cached, and the output path.
@@ -196,10 +196,10 @@ This is the debugging lever: if the render is wrong, the argv says why.
 ## render
 
 ```
-va render [-o out.mp4] [--timeout 3600]
+sona render [-o out.mp4] [--timeout 3600]
 ```
 
-Executes the plan into `.va/cache/`, then copies the final step to `-o`.
+Executes the plan into `.sona/cache/`, then copies the final step to `-o`.
 
 ```json
 {"ok": true, "out": "out.mp4", "duration": "00:00:08.333",
@@ -212,15 +212,15 @@ Executes the plan into `.va/cache/`, then copies the final step to `-o`.
 ## frames
 
 ```
-va frames [--at <t,t,...>] [--sheet <n>] [-o .va/preview]
+sona frames [--at <t,t,...>] [--sheet <n>] [-o .sona/preview]
 ```
 
 Writes PNG stills and/or a tiled contact sheet with a burnt-in timecode.
 Stills are scaled to 768 px wide for vision-model token cost.
 
 ```json
-{"ok": true, "frames": [{"path": "/work/proj/.va/preview/at-00001-000.png"},
-                        {"kind": "sheet", "path": "/work/proj/.va/preview/sheet.png"}]}
+{"ok": true, "frames": [{"path": "/work/proj/.sona/preview/at-00001-000.png"},
+                        {"kind": "sheet", "path": "/work/proj/.sona/preview/sheet.png"}]}
 ```
 
 Reads from the last cached render step, so a render must run first.
@@ -228,7 +228,7 @@ Reads from the last cached render step, so a render must run first.
 ## doctor
 
 ```
-va doctor
+sona doctor
 ```
 
 Read-only capability check: ffmpeg version, `libx264`, `libass`, `drawtext`,

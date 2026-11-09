@@ -47,7 +47,7 @@ impl RenderPlan {
 pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderPlan> {
     let project = &store.project;
     if project.tracks.video.is_empty() {
-        bail!("project has no clips (run `va add <file>`)");
+        bail!("project has no clips (run `sona add <file>`)");
     }
     let mut warnings = Vec::new();
     let mut steps = Vec::new();
@@ -335,7 +335,7 @@ fn concat_line(path: &Path) -> String {
     format!("file '{s}'")
 }
 
-/// What `va plan` prints. The agent-facing debugging lever.
+/// What `sona plan` prints. The agent-facing debugging lever.
 pub fn plan_json(plan: &RenderPlan) -> serde_json::Value {
     let steps: Vec<serde_json::Value> = plan
         .steps

@@ -14,9 +14,9 @@ use crate::report::{fail_from, ok};
 use crate::time::{Rational, Time, TimeRange};
 
 #[derive(Parser)]
-#[command(name = "va", version, about = "video editing CLI for agents")]
+#[command(name = "sona", version, about = "video editing CLI for agents")]
 pub struct Cli {
-    #[arg(long, global = true, default_value = "va.json")]
+    #[arg(long, global = true, default_value = "sona.json")]
     project: PathBuf,
     #[command(subcommand)]
     cmd: Cmd,
@@ -92,7 +92,7 @@ enum Cmd {
         at: Option<String>,
         #[arg(long)]
         sheet: Option<u32>,
-        #[arg(short = 'o', long, default_value = ".va/preview")]
+        #[arg(short = 'o', long, default_value = ".sona/preview")]
         out: PathBuf,
     },
     /// Print the ffmpeg commands a render would run.
@@ -134,7 +134,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Add { files, from, to, speed, at, fill } => {
             if files.is_empty() {
-                bail!("usage: va add <file>...");
+                bail!("usage: sona add <file>...");
             }
             let mut store = Store::open(&path)?;
             let mut media = MediaIndex::default();
@@ -392,7 +392,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"))?;
             let source = plan.last_output().to_path_buf();
             if !source.exists() {
-                bail!("nothing rendered yet (run `va render`)");
+                bail!("nothing rendered yet (run `sona render`)");
             }
             let out_dir = store.resolve(&out.to_string_lossy());
             let duration = plan.duration;

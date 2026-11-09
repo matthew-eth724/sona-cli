@@ -8,20 +8,20 @@
 ## How to get to it (user POV)
 
 ```bash
-$VA caption ./subs.srt        # {"changed":["captions"],"cues":2}
-$VA render -o out.mp4
+$SONA caption ./subs.srt        # {"changed":["captions"],"cues":2}
+$SONA render -o out.mp4
 ```
 
 ## Driving it with bash + pixels
 
 ```bash
-$VA caption ./subs.srt
-$VA render -o out-subs.mp4
+$SONA caption ./subs.srt
+$SONA render -o out-subs.mp4
 python3 - <<'PY'
-import json; d=json.load(open("va.json")); d["tracks"]["captions"]=None
-json.dump(d, open("va-bare.json","w"))
+import json; d=json.load(open("sona.json")); d["tracks"]["captions"]=None
+json.dump(d, open("sona-bare.json","w"))
 PY
-$VA --project va-bare.json render -o out-bare.mp4
+$SONA --project sona-bare.json render -o out-bare.mp4
 .claude/skills/verify/scripts/psnr-ab.sh out-subs.mp4 out-bare.mp4 1.5 "1280:120:0:520"
 ```
 

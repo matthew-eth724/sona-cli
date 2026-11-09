@@ -8,20 +8,20 @@
 ## How to get to it (user POV)
 
 ```bash
-$VA audio ./music.mp3 --gain -14      # negative needs no `--`
-$VA render -o out.mp4
+$SONA audio ./music.mp3 --gain -14      # negative needs no `--`
+$SONA render -o out.mp4
 ```
 
 ## Driving it with bash + audio measurement
 
 ```bash
-$VA audio ./music.mp3 --gain -14
-$VA render -o out-full.mp4
+$SONA audio ./music.mp3 --gain -14
+$SONA render -o out-full.mp4
 python3 - <<'PY'
-import json; d=json.load(open("va.json")); d["tracks"]["audio"]=None
-json.dump(d, open("va-bare.json","w"))
+import json; d=json.load(open("sona.json")); d["tracks"]["audio"]=None
+json.dump(d, open("sona-bare.json","w"))
 PY
-$VA --project va-bare.json render -o out-bare.mp4
+$SONA --project sona-bare.json render -o out-bare.mp4
 ffmpeg -hide_banner -i out-full.mp4 -i out-bare.mp4 -filter_complex \
  "[0:a][1:a]amix=inputs=2:weights=1 -1:normalize=0,astats=measure_overall=RMS_level:measure_perchannel=none" \
  -f null - 2>&1 | grep 'RMS level'

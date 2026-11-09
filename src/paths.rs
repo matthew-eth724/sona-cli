@@ -85,8 +85,8 @@ mod tests {
     fn paths_inside_project_become_relative() {
         let cwd = p("/work/proj");
         assert_eq!(
-            filter_escape(&p("/work/proj/.va/cache/x.srt"), &cwd),
-            "'.va/cache/x.srt'"
+            filter_escape(&p("/work/proj/.sona/cache/x.srt"), &cwd),
+            "'.sona/cache/x.srt'"
         );
     }
 

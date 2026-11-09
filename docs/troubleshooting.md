@@ -1,10 +1,10 @@
 # Troubleshooting
 
-Start with `va doctor`, then `va inspect`. Between them they explain most
+Start with `sona doctor`, then `sona inspect`. Between them they explain most
 failures without spawning a render.
 
 ```console
-$ va doctor
+$ sona doctor
 {"encoders":{"libx264":true},"ffmpeg":"ffmpeg version 7.1.5 …",
  "filters":{"drawtext":true,"libass":true},
  "font":"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","ok":true}
@@ -14,11 +14,11 @@ $ va doctor
 
 | code | exit | cause | fix |
 | --- | --- | --- | --- |
-| `project_invalid` | 2 | `va.json` unparseable, wrong `version`, zero canvas, `speed <= 0`, `src_out < src_in` | the message names the field; fix the file or re-run the edit |
-| `media_missing` | 3 | a source path does not exist | `va add <correct path>`; sources are canonicalized at add time |
+| `project_invalid` | 2 | `sona.json` unparseable, wrong `version`, zero canvas, `speed <= 0`, `src_out < src_in` | the message names the field; fix the file or re-run the edit |
+| `media_missing` | 3 | a source path does not exist | `sona add <correct path>`; sources are canonicalized at add time |
 | `unreadable` | 3 | ffprobe cannot demux the file | re-encode the source, or check it is really a video |
-| `ffmpeg_failed` | 4 | one render step failed | `va plan`, find that step, read its argv |
-| `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `va <cmd> --help` |
+| `ffmpeg_failed` | 4 | one render step failed | `sona plan`, find that step, read its argv |
+| `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `sona <cmd> --help` |
 | `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
 
 ## Warnings
@@ -38,18 +38,18 @@ created them, and in `inspect`.
 ## Symptoms
 
 **Render reports `ran: 0` after an edit.** The step's cache key did not move,
-which means the output on disk does not reflect your change. Delete `.va/cache`
+which means the output on disk does not reflect your change. Delete `.sona/cache`
 for a correct render and report it: the key must cover the step's own argv.
 
 **Render "succeeds" in 0 steps but the output is broken or silent.** A stale or
-zero-byte cache entry. `ls -la .va/cache`, then `rm -rf .va/cache` and re-render.
+zero-byte cache entry. `ls -la .sona/cache`, then `rm -rf .sona/cache` and re-render.
 
 **Text does not appear.** Three causes, in order of likelihood: `doctor` shows
 `font: null`; the overlay window is outside the timeline; `--pos` puts it under
-the burned caption band. Check `va plan` for a `drawtext` in the decorate step.
+the burned caption band. Check `sona plan` for a `drawtext` in the decorate step.
 
 **Captions do not appear.** The SRT path moved after `caption` was run, or the
-cues are outside the timeline. `va caption <file.srt>` again to re-parse and
+cues are outside the timeline. `sona caption <file.srt>` again to re-parse and
 re-see the cue count.
 
 **Audio is silent after adding a music bed.** `amix` ends with the *first* input,
@@ -76,10 +76,10 @@ assemble pass re-encodes. A 36-second 1080x1920 clip takes about 13 seconds at
 `crf 16` on 4 vCPUs. Re-renders reuse everything unaffected by the edit, so a
 single overlay change is one step, not four.
 
-**Disk filling up.** `.va/cache/` keeps one intermediate per step ever rendered
+**Disk filling up.** `.sona/cache/` keeps one intermediate per step ever rendered
 for this project. It is safe to delete at any time.
 
 ## Still stuck
 
-`va plan` is the ground truth: it shows exactly what would run. Compare the step
+`sona plan` is the ground truth: it shows exactly what would run. Compare the step
 you expect with the step that exists, and the bug is usually visible in the argv.

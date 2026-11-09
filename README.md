@@ -1,15 +1,15 @@
-# va
+# sona
 
 A video editing CLI built for AI agents. Describe an edit in a small JSON
 project file, render it with ffmpeg, look at the result as PNGs.
 
 ```console
-$ va init --size 1080x1920 --fps 30
-$ va add intro.mp4
-$ va add demo.webm --from 12s --to 28s --speed 1.5
-$ va text "Ship faster" --from 0.5 --to 4 --pos bottom
-$ va caption subs.srt
-$ va render -o out.mp4
+$ sona init --size 1080x1920 --fps 30
+$ sona add intro.mp4
+$ sona add demo.webm --from 12s --to 28s --speed 1.5
+$ sona text "Ship faster" --from 0.5 --to 4 --pos bottom
+$ sona caption subs.srt
+$ sona render -o out.mp4
 {"duration":"00:00:42.500","ok":true,"out":"out.mp4","steps":{"ran":4,"reused":0,"total":4}}
 ```
 
@@ -24,7 +24,7 @@ An agent editing video has three handicaps a human editor does not: it pays
 tokens for everything it reads and writes, it cannot watch a timeline, and it
 debugs by reading text.
 
-So `va` is a compiler, not a flag translator:
+So `sona` is a compiler, not a flag translator:
 
 - **The project is one diffable file.** An edit is a small `jq` or CLI change,
   not a re-described job spec.
@@ -33,9 +33,9 @@ So `va` is a compiler, not a flag translator:
   anything is assembled.
 - **Failures are one line with a fix.** `{"error":{"code":"media_missing",
   "message":"…","fix":"…"}}`, not a 200-line stderr dump.
-- **`va plan` shows the exact ffmpeg argv**, so a wrong render is debuggable in
+- **`sona plan` shows the exact ffmpeg argv**, so a wrong render is debuggable in
   seconds without reading vendor docs.
-- **`va frames` gives the agent eyes** — stills and contact sheets sized for a
+- **`sona frames` gives the agent eyes** — stills and contact sheets sized for a
   vision model.
 
 ## Install
@@ -45,7 +45,7 @@ Requires `ffmpeg` and `ffprobe` on `PATH`, built with `libx264`, `libass`
 
 ```console
 $ cargo build --release
-$ ./target/release/va doctor
+$ ./target/release/sona doctor
 {"encoders":{"libx264":true},"ffmpeg":"ffmpeg version 7.1.5 …",
  "filters":{"drawtext":true,"libass":true},
  "font":"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","ok":true}
@@ -87,13 +87,13 @@ past the end of the timeline, a source with no video stream.
 ## Files
 
 ```
-va.json          the project: canvas, clips, overlays, captions
-.va/cache/       content-addressed render steps (safe to delete)
-.va/preview/     default output for `va frames`
+sona.json          the project: canvas, clips, overlays, captions
+.sona/cache/       content-addressed render steps (safe to delete)
+.sona/preview/     default output for `sona frames`
 out.mp4          default render target
 ```
 
-`va.json` is the only state. `.va/` is pure cache; deleting it costs a re-render,
+`sona.json` is the only state. `.sona/` is pure cache; deleting it costs a re-render,
 never information.
 
 ## Documentation
@@ -101,7 +101,7 @@ never information.
 | | |
 | --- | --- |
 | [docs/cli.md](docs/cli.md) | every command, flag, JSON shape and failure |
-| [docs/project-file.md](docs/project-file.md) | `va.json` field reference and invariants |
+| [docs/project-file.md](docs/project-file.md) | `sona.json` field reference and invariants |
 | [docs/for-agents.md](docs/for-agents.md) | how an agent should drive it |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | error code → cause → fix |
 | [docs/design.md](docs/design.md) | why it is shaped this way |

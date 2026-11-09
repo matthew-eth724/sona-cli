@@ -1,4 +1,4 @@
-//! Content-addressed step cache. `.va/` is never authoritative: delete it any
+//! Content-addressed step cache. `.sona/` is never authoritative: delete it any
 //! time and the next render rebuilds it.
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};

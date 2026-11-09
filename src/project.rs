@@ -264,7 +264,7 @@ fn absolute(p: &Path) -> PathBuf {
     }
 }
 
-/// Owns `va.json`. Every command opens, mutates, saves through this.
+/// Owns `sona.json`. Every command opens, mutates, saves through this.
 pub struct Store {
     pub path: PathBuf,
     pub project: Project,
@@ -286,7 +286,7 @@ impl Store {
 
     pub fn open(path: &Path) -> Result<Store> {
         let raw = fs::read_to_string(path)
-            .with_context(|| format!("no project at {} (run `va init`)", path.display()))?;
+            .with_context(|| format!("no project at {} (run `sona init`)", path.display()))?;
         let project: Project = serde_json::from_str(&raw)
             .with_context(|| format!("{} is not a valid project", path.display()))?;
         project.validate()?;
@@ -301,7 +301,7 @@ impl Store {
     }
 
     pub fn cache_dir(&self) -> PathBuf {
-        self.dir().join(".va").join("cache")
+        self.dir().join(".sona").join("cache")
     }
 
     pub fn resolve(&self, rel: &str) -> PathBuf {

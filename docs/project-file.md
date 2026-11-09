@@ -1,6 +1,6 @@
 # The project file
 
-`va.json` holds the whole edit. It is the only state: `.va/` is cache, and
+`sona.json` holds the whole edit. It is the only state: `.sona/` is cache, and
 deleting it costs a re-render, never information.
 
 The file is meant to be both machine-written (by the CLI) and hand-edited (by an
@@ -137,5 +137,5 @@ Credentials. `GEMINI_API_KEY` and `DEEPGRAM_API_KEY` are read from the
 environment only. A project file gets committed, shared and pasted into
 transcripts; secrets do not belong in it.
 
-Rendered output paths. The render target is a flag (`va render -o`), not project
+Rendered output paths. The render target is a flag (`sona render -o`), not project
 state, so the same project can produce a preview and a master without an edit.
