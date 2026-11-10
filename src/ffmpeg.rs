@@ -3,7 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -137,20 +137,105 @@ pub fn capabilities() -> Capabilities {
     }
 }
 
-/// Resolved font file for drawtext, so a render is not at the mercy of a
-/// machine's fontconfig defaults without anyone noticing.
+/// Where the font came from, so `doctor` can say so instead of guessing.
+pub fn font_pick() -> Option<(&'static str, String)> {
+    use std::sync::OnceLock;
+    static PICK: OnceLock<Option<(&'static str, String)>> = OnceLock::new();
+    PICK.get_or_init(pick_font).clone()
+}
+
 pub fn resolve_font() -> Option<String> {
-    let out = Command::new("fc-match")
-        .args(["-f", "%{file}", "sans:bold"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
+    font_pick().map(|(_, path)| path)
+}
+
+/// Font resolution in the order that respects the machine, then falls back to
+/// fonts that ship with the OS.
+///
+/// `fc-match` is a fontconfig tool: present on Linux, absent on Windows unless
+/// MSYS is installed, and often absent on macOS. Relying on it alone meant text
+/// overlays failed on Windows with `no_font` while the rest of the tool worked.
+fn pick_font() -> Option<(&'static str, String)> {
+    if let Ok(p) = std::env::var("SPLICE_FONT") {
+        if Path::new(&p).is_file() {
+            return Some(("SPLICE_FONT", p));
+        }
     }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
+    if let Ok(out) = Command::new("fc-match").args(["-f", "%{file}", "sans:bold"]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() && Path::new(&s).is_file() {
+                return Some(("fc-match", s));
+            }
+        }
+    }
+    first_existing(&font_candidates()).map(|p| ("built-in path", p))
+}
+
+/// Fonts that a fresh install of each OS already has. No download, no config.
+pub fn font_candidates() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = Vec::new();
+    if cfg!(windows) {
+        let root = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_string());
+        for f in ["segoeui.ttf", "arial.ttf", "calibri.ttf", "tahoma.ttf"] {
+            v.push(PathBuf::from(&root).join("Fonts").join(f));
+        }
+    }
+    if cfg!(target_os = "macos") {
+        for p in [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Supplemental/Verdana.ttf",
+        ] {
+            v.push(PathBuf::from(p));
+        }
+    }
+    for p in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    ] {
+        v.push(PathBuf::from(p));
+    }
+    v
+}
+
+pub fn first_existing(paths: &[PathBuf]) -> Option<String> {
+    paths
+        .iter()
+        .find(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidates_include_the_platform_it_was_built_for() {
+        let c = font_candidates();
+        assert!(!c.is_empty());
+        if cfg!(windows) {
+            assert!(c.iter().any(|p| p.to_string_lossy().contains("Windows")));
+        }
+        if cfg!(target_os = "macos") {
+            assert!(c.iter().any(|p| p.to_string_lossy().contains("/System/Library/Fonts")));
+        }
+        assert!(c.iter().any(|p| p.to_string_lossy().contains("dejavu")));
+    }
+
+    #[test]
+    fn first_existing_takes_the_first_real_file() {
+        let dir = std::env::temp_dir().join(format!("splice-font-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let real = dir.join("a.ttf");
+        std::fs::write(&real, b"not a real font").unwrap();
+        let missing = dir.join("gone.ttf");
+        let got = first_existing(&[missing.clone(), real.clone()]);
+        assert_eq!(got.as_deref(), Some(real.to_str().unwrap()));
+        assert!(first_existing(&[missing]).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

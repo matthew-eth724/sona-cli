@@ -22,7 +22,9 @@ $ splice doctor
 | `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
-| `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
+| `no_font` | 2 | no usable font: no `fc-match`, no bundled-path font | `set SPLICE_FONT=/path/to/font.ttf`, or install one; `doctor` shows where it looked |
+| `ffmpeg_missing` | 4 | `ffmpeg` or `ffprobe` is not on `PATH` | the `fix` line names the install command for your OS |
+| `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264`, `libass` or `freetype` | install a full build; `doctor` lists what is missing |
 
 ## Warnings
 
@@ -125,6 +127,13 @@ wants the final render. Run the matching `render` first.
 **The project is unreadable and nothing opens.** `splice undo`. It restores the
 last snapshot without parsing the broken file. If that fails, the previous
 document is still at `.splice/history/<seq>.json` under the `project` key.
+
+**Text or captions fail with `no_font`, but the rest of the tool works.** Font
+lookup tries `SPLICE_FONT`, then `fc-match`, then fonts that ship with the OS
+(`C:\Windows\Fonts\segoeui.ttf`, `/System/Library/Fonts/...`,
+`/usr/share/fonts/truetype/dejavu/...`). `fc-match` does not exist on a clean
+Windows or macOS install, which is why the built-in paths exist. `doctor` reports
+which source won.
 
 **`find` returns nothing but you can see the words.** Matching ignores case and
 punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and

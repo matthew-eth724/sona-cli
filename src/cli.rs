@@ -1335,25 +1335,61 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Doctor => {
             let caps = crate::ffmpeg::capabilities();
-            let font = crate::ffmpeg::resolve_font();
+            let (font, font_source) = match crate::ffmpeg::font_pick() {
+                Some((origin, path)) => (json!(path), json!(origin)),
+                None => (json!(null), json!(null)),
+            };
+            let ffprobe = std::process::Command::new("ffprobe")
+                .arg("-version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
             let keys = json!({
                 "gemini": std::env::var("GEMINI_API_KEY").is_ok(),
                 "deepgram": std::env::var("DEEPGRAM_API_KEY").is_ok(),
             });
-            let missing = caps.missing();
-            ok(
-                json!({
-                    "ffmpeg": caps.version,
-                    "encoders": {"libx264": caps.libx264},
-                    "filters": {"libass": caps.libass, "drawtext": caps.drawtext},
-                    "font": font,
-                    "keys_in_env": keys,
-                }),
-                &[],
-            );
-            if !missing.is_empty() {
-                eprintln!("doctor: ffmpeg is missing {}", missing.join(", "));
+            let report = json!({
+                "ffmpeg": if caps.version.is_empty() { json!(null) } else { json!(caps.version) },
+                "ffprobe": ffprobe,
+                "encoders": {"libx264": caps.libx264},
+                "filters": {"libass": caps.libass, "drawtext": caps.drawtext},
+                "font": font,
+                "font_source": font_source,
+                "keys_in_env": keys,
+            });
+
+            // A doctor that says "ok" while ffmpeg is absent is worse than no
+            // doctor: the failure surfaces later, at render time, as a mystery.
+            if caps.version.is_empty() || !ffprobe {
+                let what = if caps.version.is_empty() { "ffmpeg" } else { "ffprobe" };
+                crate::report::fail_with(
+                    "ffmpeg_missing",
+                    format!("{what} is not on PATH"),
+                    Some(install_ffmpeg_hint().into()),
+                    json!({ "report": report }),
+                );
             }
+            if !caps.missing().is_empty() {
+                crate::report::fail_with(
+                    "ffmpeg_incapable",
+                    format!("this ffmpeg lacks {}", caps.missing().join(", ")),
+                    Some(install_ffmpeg_hint().into()),
+                    json!({ "report": report }),
+                );
+            }
+
+            let mut warnings = Vec::new();
+            if crate::ffmpeg::resolve_font().is_none() {
+                warnings.push(
+                    crate::report::Diagnostic::new(
+                        "no_font",
+                        "font",
+                        "no usable font found; text overlays and captions will fail",
+                    )
+                    .with_fix("set SPLICE_FONT=/path/to/font.ttf"),
+                );
+            }
+            ok(report, &warnings);
             Ok(())
         }
     }
@@ -1445,6 +1481,16 @@ fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
         }
     }
     Ok(cuts)
+}
+
+fn install_ffmpeg_hint() -> &'static str {
+    if cfg!(windows) {
+        "winget install Gyan.FFmpeg   (then open a new terminal)"
+    } else if cfg!(target_os = "macos") {
+        "brew install ffmpeg"
+    } else {
+        "sudo apt install ffmpeg   (needs libx264, libass, freetype)"
+    }
 }
 
 fn loudness_arg(on: bool, lufs: f32, tp: f32, lra: f32) -> Option<graph::Loudness> {

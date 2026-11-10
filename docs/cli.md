@@ -621,6 +621,12 @@ Two behaviours worth knowing:
 splice doctor
 ```
 
-Read-only capability check: ffmpeg version, `libx264`, `libass`, `drawtext`,
-resolved font file, and whether `GEMINI_API_KEY` / `DEEPGRAM_API_KEY` are visible.
-Never prints a secret value.
+Read-only capability check: ffmpeg and ffprobe presence, `libx264`, `libass`,
+`drawtext`, the resolved font file and **where it came from** (`fc-match`,
+`SPLICE_FONT`, or a built-in OS path), and whether `GEMINI_API_KEY` /
+`DEEPGRAM_API_KEY` are visible. Never prints a secret value.
+
+`doctor` exits `4` when ffmpeg or ffprobe is missing, or when the ffmpeg found
+lacks a required encoder or filter — with the install command for your OS in the
+`fix` line. Reporting `ok: true` while ffmpeg was absent used to mean the failure
+surfaced later, at render time, as a mystery.

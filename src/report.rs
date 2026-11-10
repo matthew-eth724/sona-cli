@@ -103,6 +103,26 @@ pub fn exit_code(code: &str) -> i32 {
     }
 }
 
+/// `fail`, plus extra top-level fields (a report the caller can still read).
+pub fn fail_with(code: &str, message: impl Into<String>, fix: Option<String>, extra: Value) -> ! {
+    let msg = message.into();
+    let mut body = json!({"ok": false, "error": {"code": code, "message": msg.clone()}});
+    if let Some(f) = &fix {
+        body["error"]["fix"] = json!(f);
+    }
+    if let Some(map) = extra.as_object() {
+        for (k, v) in map {
+            body[k] = v.clone();
+        }
+    }
+    emit_line(&serde_json::to_string(&body).unwrap());
+    eprintln!("{code}: {msg}");
+    if let Some(f) = fix {
+        eprintln!("fix: {f}");
+    }
+    std::process::exit(exit_code(code));
+}
+
 /// Turns any error into the right class without inventing a new one.
 pub fn fail_from(e: anyhow::Error) -> ! {
     let text = format!("{e:#}");
