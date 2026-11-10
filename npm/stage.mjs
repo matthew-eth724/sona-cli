@@ -16,7 +16,7 @@ const TARGETS = {
   "linux-arm64": { pkg: "splice-cli-linux-arm64", os: ["linux"], cpu: ["arm64"], exe: "splice" },
   "darwin-x64": { pkg: "splice-cli-darwin-x64", os: ["darwin"], cpu: ["x64"], exe: "splice" },
   "darwin-arm64": { pkg: "splice-cli-darwin-arm64", os: ["darwin"], cpu: ["arm64"], exe: "splice" },
-  "win32-x64": { pkg: "splice-cli-win32-x64", os: ["win32"], cpu: ["x64"], exe: "splice.exe" },
+  "win32-x64": { pkg: "splice-cli-windows-x64", os: ["win32"], cpu: ["x64"], exe: "splice.exe" },
 };
 
 const [key, binary] = process.argv.slice(2);

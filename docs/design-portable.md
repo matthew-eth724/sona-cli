@@ -58,7 +58,7 @@ splice-cli-linux-x64/           ~7.0 MB gzipped
 splice-cli-linux-arm64/         same shape
 splice-cli-linux-armv7/         same shape (musleabihf)
 splice-cli-darwin-universal/    one lipo'd binary + ffmpeg, cpu: ["x64","arm64"]
-splice-cli-win32-x64/           bin/*.exe
+splice-cli-windows-x64/           bin/*.exe
 ```
 
 Two moves do most of the work.

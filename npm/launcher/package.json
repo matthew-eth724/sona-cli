@@ -32,6 +32,6 @@
     "splice-cli-linux-arm64": "0.1.0",
     "splice-cli-darwin-x64": "0.1.0",
     "splice-cli-darwin-arm64": "0.1.0",
-    "splice-cli-win32-x64": "0.1.0"
+    "splice-cli-windows-x64": "0.1.0"
   }
 }
