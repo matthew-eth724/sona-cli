@@ -566,6 +566,13 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **Image overlays and transitions.** An image is an `overlay` chain node per
+  overlay, because ffmpeg's `overlay` takes exactly two inputs and cannot chain
+  inside one filter string; width and margin are stored as fractions of the
+  canvas so a preview renders them at the right scale without a second setting.
+  A transition replaces the copy-concat with an `xfade` chain, so a program with
+  any transition is re-encoded and its duration shrinks by the overlap — stated
+  in `duration`, not hidden.
 - **`--dry-run` everywhere.** Every mutation can report its resulting duration and
   diagnostics without writing: no save, no history snapshot, no index file. It
   reuses the same `finish` path as the real run, so the dry answer and the real

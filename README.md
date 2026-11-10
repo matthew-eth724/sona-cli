@@ -77,7 +77,8 @@ filters exist, which font `drawtext` will use, and whether ASR keys are visible.
 | --- | --- |
 | setup | `init` `doctor` |
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
-| layers | `text` `audio` `caption` |
+| layers | `text` `image` `audio` `caption` |
+| joining | `transition` |
 | reading | `index` `view` `find` `scenes` |
 | tighten | `cut` |
 | output | `plan` `render` `frames` |

@@ -193,6 +193,54 @@ colour (`white`, `0x00FF00`, `red@0.8`). Content may contain `:` `,` `'` `%`.
 
 A window past the end of the timeline is a `text_past_end` warning, not an error.
 
+## image
+
+```
+sona image <file> --from <t> --to <t> [--pos bottom-left] [--width <px>]
+                 [--opacity 1.0] [--margin <px>]
+```
+
+Places a PNG over the picture: a logo, a lower third, a sting. `--pos` takes
+`top`, `top-left`, `top-right`, `center`, `bottom`, `bottom-left`,
+`bottom-right`; the corners are what a logo or a lower third actually wants.
+
+```console
+$ sona image logo.png --from 1 --to 5 --pos top-right --width 120 --opacity 0.9
+{"ok": true, "changed": ["image_1"], "width_px": 120, "invalidated": 1}
+$ sona image lower-third.png --from 2 --to 4 --pos bottom --width 560
+```
+
+`--width` and `--margin` are pixels at the **project canvas** and are stored as a
+fraction of it, so the same project renders correctly at preview size. At 640 px
+wide with `--width 120`, the preview profile draws it 90 px wide without being
+told. `--opacity` is 0–1 and multiplies the PNG's own alpha.
+
+Images are composited after the text and captions, so a lower third covers burned
+subtitles rather than the reverse.
+
+## transition
+
+```
+sona transition <id> [--kind crossfade|dip_to_black] [--duration 500ms] [--none]
+```
+
+Sets the transition that brings clip `<id>` in from its predecessor. `--none`
+restores a hard cut. The clip must not be first, and the duration must be shorter
+than both neighbours — the command refuses otherwise, and `diagnose` warns
+`transition_too_long` with a fix if a hand-edited project tries it.
+
+```console
+$ sona transition clip_2 --kind crossfade --duration 600ms
+{"ok": true, "changed": ["clip_2"], "kind": "crossfade", "duration": "00:00:08.400"}
+$ sona transition clip_3 --kind dip_to_black --duration 600ms
+$ sona list | jq -r '.duration'      # 7.800 — 9s of clips, two 0.6s overlaps
+```
+
+**Transitions cost a re-encode.** A plain concat copies streams; an `xfade` chain
+has to decode and blend, so the assemble step becomes a real encode. Audio
+crossfades in step, and a program with any transition reports its duration minus
+the overlaps.
+
 ## audio
 
 ```

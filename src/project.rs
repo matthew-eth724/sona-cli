@@ -65,6 +65,42 @@ pub struct Clip {
     pub transform: Transform,
     #[serde(default)]
     pub gain_db: f32,
+    /// How this clip is brought in from the previous one. `None` is a hard cut.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<Transition>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Transition {
+    pub kind: TransitionKind,
+    pub duration: Time,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TransitionKind {
+    Crossfade,
+    /// Fade out to black, then in: `fadeblack` in ffmpeg.
+    DipToBlack,
+}
+
+impl TransitionKind {
+    pub fn xfade(self) -> &'static str {
+        match self {
+            TransitionKind::Crossfade => "fade",
+            TransitionKind::DipToBlack => "fadeblack",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<TransitionKind> {
+        match raw {
+            "crossfade" | "fade" => Some(TransitionKind::Crossfade),
+            "dip_to_black" | "dip-to-black" | "dip" | "fadeblack" => {
+                Some(TransitionKind::DipToBlack)
+            }
+            _ => None,
+        }
+    }
 }
 
 fn one() -> f64 {
@@ -90,6 +126,27 @@ pub struct AudioBed {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Overlay {
     Text(TextOverlay),
+    Image(ImageOverlay),
+}
+
+impl Overlay {
+    pub fn id(&self) -> &str {
+        match self {
+            Overlay::Text(t) => &t.id,
+            Overlay::Image(i) => &i.id,
+        }
+    }
+
+    pub fn at(&self) -> TimeRange {
+        match self {
+            Overlay::Text(t) => t.at,
+            Overlay::Image(i) => i.at,
+        }
+    }
+
+    pub fn is_image(&self) -> bool {
+        matches!(self, Overlay::Image(_))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,13 +169,70 @@ fn default_color() -> String {
     "white".into()
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// Also used to place image overlays, where the corners are what a logo or a
+/// lower third actually wants.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Anchor {
     Top,
+    TopLeft,
+    TopRight,
     #[default]
     Bottom,
+    BottomLeft,
+    BottomRight,
     Center,
+}
+
+/// A PNG over the picture: logo, lower third, sting.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ImageOverlay {
+    pub id: String,
+    pub source: String,
+    pub at: TimeRange,
+    #[serde(default)]
+    pub anchor: Anchor,
+    /// Width as a fraction of the canvas width, so the same project renders
+    /// correctly at preview size and at full size.
+    pub width: f32,
+    #[serde(default = "default_opacity")]
+    pub opacity: f32,
+    /// Distance from the canvas edge, also as a fraction of the width.
+    #[serde(default = "default_margin")]
+    pub margin: f32,
+}
+
+fn default_opacity() -> f32 {
+    1.0
+}
+fn default_margin() -> f32 {
+    0.03
+}
+
+impl ImageOverlay {
+    /// Overlay width in pixels for a given canvas, always even.
+    pub fn px_width(&self, canvas_width: u32) -> u32 {
+        let px = (canvas_width as f32 * self.width).round().max(2.0) as u32;
+        (px / 2) * 2
+    }
+
+    pub fn px_margin(&self, canvas_width: u32) -> u32 {
+        (canvas_width as f32 * self.margin).round().max(0.0) as u32
+    }
+
+    /// ffmpeg overlay `x:y` for this anchor. `W`/`H` are the canvas, `w`/`h`
+    /// the overlay's own size, `m` the margin.
+    pub fn xy_expr(&self) -> (&'static str, &'static str) {
+        match self.anchor {
+            Anchor::Top => ("(W-w)/2", "m"),
+            Anchor::TopLeft => ("m", "m"),
+            Anchor::TopRight => ("W-w-m", "m"),
+            Anchor::Center => ("(W-w)/2", "(H-h)/2"),
+            Anchor::Bottom => ("(W-w)/2", "H-h-m"),
+            Anchor::BottomLeft => ("m", "H-h-m"),
+            Anchor::BottomRight => ("W-w-m", "H-h-m"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -145,14 +259,21 @@ impl Project {
     /// `src_out: None` means "to the end of the source", so this needs media.
     pub fn duration(&self, media: &mut MediaIndex) -> Time {
         let mut total = 0i64;
-        for c in &self.tracks.video {
+        for (i, c) in self.tracks.video.iter().enumerate() {
             let d = match media.get(Path::new(&c.source)) {
                 Ok(m) => c.out_duration(m.duration),
                 Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
             };
             total += d.micros();
+            // A transition overlaps its two neighbours, so it shortens the
+            // program by its own duration. The first clip cannot have one.
+            if i > 0 {
+                if let Some(t) = &c.transition {
+                    total -= t.duration.micros();
+                }
+            }
         }
-        Time::from_micros(total)
+        Time::from_micros(total.max(0))
     }
 
     pub fn next_id(&self, prefix: &str) -> String {
@@ -160,9 +281,7 @@ impl Project {
         loop {
             let candidate = format!("{prefix}_{n}");
             let taken = self.tracks.video.iter().any(|c| c.id == candidate)
-                || self.tracks.overlays.iter().any(|o| match o {
-                    Overlay::Text(t) => t.id == candidate,
-                });
+                || self.tracks.overlays.iter().any(|o| o.id() == candidate);
             if !taken {
                 return candidate;
             }
@@ -178,9 +297,17 @@ impl Project {
         if self.canvas.width == 0 || self.canvas.height == 0 {
             bail!("canvas has zero size");
         }
-        for c in &self.tracks.video {
+        for (i, c) in self.tracks.video.iter().enumerate() {
             if c.speed <= 0.0 {
                 bail!("clip {} has speed <= 0", c.id);
+            }
+            if i == 0 && c.transition.is_some() {
+                bail!("clip {} is first; it has nothing to transition from", c.id);
+            }
+            if let Some(t) = &c.transition {
+                if t.duration.micros() <= 0 {
+                    bail!("clip {} has a zero-length transition", c.id);
+                }
             }
             if let Some(out) = c.src_out {
                 if out < c.src_in {
@@ -240,6 +367,34 @@ impl Project {
             };
             placed = Time::from_micros(placed.micros() + span.micros());
         }
+        let mut prev_len = Time::ZERO;
+        for (i, c) in self.tracks.video.iter().enumerate() {
+            let len = match media.get(Path::new(&c.source)) {
+                Ok(m) => c.out_duration(m.duration),
+                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
+            };
+            if let Some(t) = &c.transition {
+                let shorter = len.min(prev_len);
+                if t.duration > shorter {
+                    out.push(
+                        Diagnostic::new(
+                            "transition_too_long",
+                            format!("tracks.video[{i}].transition"),
+                            format!(
+                                "{} fades for {} but the shorter neighbour is {}",
+                                c.id, t.duration, shorter
+                            ),
+                        )
+                        .with_fix(format!(
+                            "sona transition {} --duration {}",
+                            c.id,
+                            Time::from_micros((shorter.micros() / 2).max(1))
+                        )),
+                    );
+                }
+            }
+            prev_len = len;
+        }
         if let Some(caps) = &self.tracks.captions {
             if !Path::new(&caps.source).exists() {
                 out.push(
@@ -253,19 +408,48 @@ impl Project {
             }
         }
         for (i, o) in self.tracks.overlays.iter().enumerate() {
-            let Overlay::Text(t) = o;
-            if t.at.end > placed && placed > Time::ZERO {
+            let at = o.at();
+            if at.end > placed && placed > Time::ZERO {
+                let what = if o.is_image() { "image" } else { "text" };
+                let code = if o.is_image() { "image_past_end" } else { "text_past_end" };
                 out.push(
                     Diagnostic::new(
-                        "text_past_end",
+                        code,
                         format!("tracks.overlays[{i}].at"),
                         format!(
-                            "text {} ends at {} but the timeline ends at {}",
-                            t.id, t.at.end, placed
+                            "{} {} ends at {} but the timeline ends at {}",
+                            what,
+                            o.id(),
+                            at.end,
+                            placed
                         ),
                     )
-                    .with_fix(format!("sona rm {}", t.id)),
+                    .with_fix(format!("sona rm {}", o.id())),
                 );
+            }
+        }
+        for (i, o) in self.tracks.overlays.iter().enumerate() {
+            if let Overlay::Image(img) = o {
+                if !Path::new(&img.source).exists() {
+                    out.push(
+                        Diagnostic::new(
+                            "overlay_image_missing",
+                            format!("tracks.overlays[{i}].source"),
+                            format!("{} does not exist", img.source),
+                        )
+                        .with_fix(format!("sona rm {}", img.id)),
+                    );
+                }
+                if img.width <= 0.0 || img.width > 1.0 {
+                    out.push(
+                        Diagnostic::new(
+                            "overlay_bad_width",
+                            format!("tracks.overlays[{i}].width"),
+                            format!("width {} is not between 0 and 1 of the canvas", img.width),
+                        )
+                        .with_fix(format!("sona image {} --width 320", img.source)),
+                    );
+                }
             }
         }
         out
@@ -385,6 +569,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            transition: None,
         });
         let mut media = MediaIndex::default();
         let diags = p.diagnose(&mut media);
@@ -408,6 +593,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            transition: None,
         });
         p.tracks.overlays.push(Overlay::Text(TextOverlay {
             id: "text_1".into(),
@@ -421,6 +607,76 @@ mod tests {
         let diags = p.diagnose(&mut media);
         let d = diags.iter().find(|d| d.code == "text_past_end").expect("a warning");
         assert_eq!(d.fix.as_deref(), Some("sona rm text_1"));
+    }
+
+    fn clip_with(id: &str, out: f64, transition: Option<Transition>) -> Clip {
+        Clip {
+            id: id.into(),
+            source: "/nope/gone.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: Some(Time::from_secs_f64(out)),
+            speed: 1.0,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+            transition,
+        }
+    }
+
+    #[test]
+    fn transitions_shorten_the_program() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.video = vec![
+            clip_with("clip_1", 3.0, None),
+            clip_with(
+                "clip_2",
+                3.0,
+                Some(Transition {
+                    kind: TransitionKind::Crossfade,
+                    duration: Time::from_secs_f64(0.6),
+                }),
+            ),
+        ];
+        let mut media = MediaIndex::default();
+        // 3 + 3 - 0.6
+        assert_eq!(p.duration(&mut media).micros(), 5_400_000);
+    }
+
+    #[test]
+    fn a_transition_on_the_first_clip_is_rejected() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.video = vec![clip_with(
+            "clip_1",
+            3.0,
+            Some(Transition {
+                kind: TransitionKind::Crossfade,
+                duration: Time::from_secs_f64(0.5),
+            }),
+        )];
+        let err = p.validate().unwrap_err().to_string();
+        assert!(err.contains("nothing to transition from"), "{err}");
+    }
+
+    #[test]
+    fn a_transition_longer_than_its_neighbour_warns_with_a_fix() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.video = vec![
+            clip_with("clip_1", 1.0, None),
+            clip_with(
+                "clip_2",
+                5.0,
+                Some(Transition {
+                    kind: TransitionKind::Crossfade,
+                    duration: Time::from_secs_f64(2.0),
+                }),
+            ),
+        ];
+        let mut media = MediaIndex::default();
+        let d = p
+            .diagnose(&mut media)
+            .into_iter()
+            .find(|d| d.code == "transition_too_long")
+            .expect("a warning");
+        assert_eq!(d.fix.as_deref(), Some("sona transition clip_2 --duration 00:00:00.500"));
     }
 
     #[test]
@@ -445,6 +701,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            transition: None,
         });
         p.tracks.captions = Some(Captions { source: "/nope/x.srt".into(), burn: true });
         let mut media = MediaIndex::default();

@@ -59,6 +59,18 @@ re-see the cue count.
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
+**The program got shorter after adding a transition.** Correct: the transition
+overlaps the two clips, so `duration` drops by the transition length. Check with
+`sona list`.
+
+**`transition_too_long`.** The fade is longer than one of the clips it joins.
+`fix` names a duration that fits.
+
+**An image overlay does not appear.** Four things, in order: the file is not a
+PNG with an alpha channel (a fully transparent asset composites to nothing), the
+window is outside the timeline, `--opacity 0`, or the anchor placed it off-canvas
+because `--margin` is larger than the frame.
+
 **`scenes` finds nothing, or everything.** `--threshold` is ffmpeg's scene score:
 0.4 is a normal cut, lower finds more. Sourced from a single long take, you get one
 scene and that is correct. A music video cut every beat needs a much lower

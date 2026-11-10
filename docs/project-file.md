@@ -77,6 +77,18 @@ separate sequence or timeline object to keep in sync.
 A clip's contribution to the timeline is
 `(min(src_out, media_duration) - src_in) / speed`.
 
+## clip.transition
+
+An optional incoming transition from the previous clip. Absent means a hard cut.
+
+| field | type | notes |
+| --- | --- | --- |
+| `kind` | `crossfade` \| `dip_to_black` | ffmpeg `fade` / `fadeblack` |
+| `duration` | time | must be shorter than both neighbours |
+
+The first clip may not have one, and the program duration subtracts each
+transition, because the two clips overlap for that long.
+
 ## tracks.audio
 
 One optional music bed, mixed under the clips and ended by them.
@@ -89,6 +101,18 @@ One optional music bed, mixed under the clips and ended by them.
 ## tracks.overlays
 
 A tagged array; the tag is `kind`.
+
+`kind: "image"` — a PNG over the picture:
+
+| field | type | default | notes |
+| --- | --- | --- | --- |
+| `id` | string | required | `image_<n>` |
+| `source` | string | required | absolute path to a PNG (alpha respected) |
+| `at` | `{start, end}` | required | microseconds |
+| `anchor` | `top`, `top_left`, `top_right`, `center`, `bottom`, `bottom_left`, `bottom_right` | `bottom` |
+| `width` | f32 | required | fraction of canvas width, so preview renders scale |
+| `opacity` | f32 | `1.0` | 0–1, multiplies the PNG's alpha |
+| `margin` | f32 | `0.03` | fraction of canvas width |
 
 `kind: "text"`:
 

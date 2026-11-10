@@ -96,6 +96,15 @@ pub struct Step {
     pub output: PathBuf,
 }
 
+/// One normalized clip on its way into the assemble stage.
+#[derive(Clone, Debug)]
+pub struct Segment {
+    pub key: String,
+    pub path: PathBuf,
+    pub duration: Time,
+    pub transition: Option<crate::project::Transition>,
+}
+
 #[derive(Clone, Debug)]
 pub struct RenderPlan {
     pub steps: Vec<Step>,
@@ -127,7 +136,7 @@ pub fn plan(
     let version = crate::ffmpeg::capabilities().version;
 
     // Stage 1: one normalized segment per clip.
-    let mut segments: Vec<(String, PathBuf)> = Vec::new();
+    let mut segments: Vec<Segment> = Vec::new();
     for clip in &project.tracks.video {
         let src = store.resolve(&clip.source);
         let m = media.get(&src)?.clone();
@@ -177,22 +186,64 @@ pub fn plan(
         inv.push(arg(&output));
         steps.push(Step {
             label: format!("normalize {}", clip.id),
-            key,
+            key: key.clone(),
             invocation: inv,
             sidecar: None,
             output: output.clone(),
         });
-        segments.push((clip.id.clone(), output));
+        segments.push(Segment {
+            key: key.clone(),
+            path: output,
+            duration: clip.out_duration(m.duration),
+            // The first segment has no predecessor, whatever the document says.
+            transition: if segments.is_empty() { None } else { clip.transition.clone() },
+        });
     }
     if steps.is_empty() {
         bail!("every clip is empty after trimming");
     }
 
     // Stage 2a: concatenate.
+    let wants_transition = segments.iter().skip(1).any(|s| s.transition.is_some());
     let (mut base_key, mut base_path) = match segments.len() {
         1 => {
             let s = &steps[0];
             (s.key.clone(), s.output.clone())
+        }
+        _ if wants_transition => {
+            // xfade consumes both inputs and runs them together, so this cannot
+            // be the concat demuxer's `-c copy`: it is a real re-encode.
+            let clause: Vec<String> = segments
+                .iter()
+                .map(|s| format!("{}|{}|{}", s.key, s.transition.as_ref().map(|t| t.kind.xfade()).unwrap_or("cut"), s.transition.as_ref().map(|t| t.duration.micros()).unwrap_or(0)))
+                .collect();
+            let key = cache::hash(&[
+                clause.join(","),
+                "xfade".into(),
+                version.clone(),
+                profile.tag().into(),
+            ]);
+            let output = cache::path(&cache_dir, &key, "mp4");
+            let mut inv = Invocation::new();
+            for seg in &segments {
+                inv.input(&seg.path);
+            }
+            let graph = xfade_graph(&segments);
+            inv.push("-filter_complex").push(graph);
+            inv.push("-map").push("[v]");
+            inv.push("-map").push("[a]");
+            profile.video_args(&mut inv);
+            profile.audio_args(&mut inv);
+            inv.push("-movflags").push("+faststart");
+            inv.push(arg(&output));
+            steps.push(Step {
+                label: format!("crossfade {} segments", segments.len()),
+                key: key.clone(),
+                invocation: inv,
+                sidecar: None,
+                output: output.clone(),
+            });
+            (key, output)
         }
         _ => {
             let keys: Vec<String> = steps.iter().map(|s| s.key.clone()).collect();
@@ -205,8 +256,8 @@ pub fn plan(
             let list_path = cache::path(&cache_dir, &key, "txt");
             let output = cache::path(&cache_dir, &key, "mp4");
             let mut body = String::new();
-            for (_, seg) in &segments {
-                body.push_str(&concat_line(seg));
+            for seg in &segments {
+                body.push_str(&concat_line(&seg.path));
                 body.push('\n');
             }
             let mut inv = Invocation::new();
@@ -234,6 +285,7 @@ pub fn plan(
         .overlays
         .iter()
         .any(|o| matches!(o, Overlay::Text(_)));
+    let has_images = project.tracks.overlays.iter().any(|o| o.is_image());
     let has_captions = project
         .tracks
         .captions
@@ -243,9 +295,11 @@ pub fn plan(
     let has_bed = project.tracks.audio.is_some();
     let mut extra_inputs: Vec<String> = Vec::new();
 
-    if has_text || has_captions || has_bed {
+    if has_text || has_images || has_captions || has_bed {
         let mut inv = Invocation::new();
         inv.input(&base_path);
+        let mut next_input = 1usize;
+        let bed_input = if has_bed { 1 } else { 0 };
         if has_captions {
             let caps = project.tracks.captions.as_ref().unwrap();
             let srt = store.resolve(&caps.source);
@@ -259,11 +313,37 @@ pub fn plan(
         if has_bed {
             let bed = project.tracks.audio.as_ref().unwrap();
             let music = store.resolve(&bed.source);
+            if !music.exists() {
+                bail!("music bed {} does not exist", music.display());
+            }
             inv.input(&music);
             extra_inputs.push(cache::stat_token(&music));
+            next_input += 1;
+        }
+        // Images come after the bed, so the audio graph's indices stay stable.
+        let mut image_inputs: Vec<(String, usize)> = Vec::new();
+        for o in &project.tracks.overlays {
+            let Overlay::Image(img) = o else { continue };
+            let src = store.resolve(&img.source);
+            if !src.exists() {
+                bail!("overlay image {} does not exist", src.display());
+            }
+            inv.input(&src);
+            extra_inputs.push(cache::stat_token(&src));
+            image_inputs.push((img.id.clone(), next_input));
+            next_input += 1;
         }
 
-        let graph = build_filter_graph(project, store, has_captions, has_bed)?;
+        let (canvas_w, _) = profile.canvas(&project.canvas);
+        let graph = build_filter_graph(
+            project,
+            store,
+            has_captions,
+            has_bed,
+            &image_inputs,
+            canvas_w,
+            bed_input,
+        )?;
         inv.push("-filter_complex").push(graph);
         inv.push("-map").push("[v]");
         inv.push("-map").push("[a]");
@@ -358,11 +438,16 @@ pub fn atempo_chain(speed: f64) -> Vec<String> {
     out
 }
 
+/// `image_inputs` maps overlay id → ffmpeg input index, in the order the plan
+/// appended them.
 fn build_filter_graph(
     project: &Project,
     store: &Store,
     has_captions: bool,
     has_bed: bool,
+    image_inputs: &[(String, usize)],
+    canvas_width: u32,
+    bed_input: usize,
 ) -> Result<String> {
     let mut vf: Vec<String> = Vec::new();
     if has_captions {
@@ -374,19 +459,24 @@ fn build_filter_graph(
         ));
     }
     for o in &project.tracks.overlays {
-        let Overlay::Text(t) = o;
+        let Overlay::Text(t) = o else { continue };
         let font = crate::ffmpeg::resolve_font().context("no_font: fc-match found no sans font")?;
-        let y = match t.anchor {
-            Anchor::Top => "48".to_string(),
-            Anchor::Center => "(h-th)/2".to_string(),
-            Anchor::Bottom => "h-th-64".to_string(),
+        let (x, y) = match t.anchor {
+            Anchor::Top => ("(w-text_w)/2", "48".to_string()),
+            Anchor::TopLeft => ("48", "48".to_string()),
+            Anchor::TopRight => ("w-text_w-48", "48".to_string()),
+            Anchor::Center => ("(w-text_w)/2", "(h-th)/2".to_string()),
+            Anchor::Bottom => ("(w-text_w)/2", "h-th-64".to_string()),
+            Anchor::BottomLeft => ("48", "h-th-64".to_string()),
+            Anchor::BottomRight => ("w-text_w-48", "h-th-64".to_string()),
         };
         vf.push(format!(
-            "drawtext=fontfile={}:text='{}':fontsize={}:fontcolor={}:box=1:boxcolor=black@0.45:boxborderw=16:x=(w-text_w)/2:y={}:enable='between(t,{:.3},{:.3})'",
+            "drawtext=fontfile={}:text='{}':fontsize={}:fontcolor={}:box=1:boxcolor=black@0.45:boxborderw=16:x={}:y={}:enable='between(t,{:.3},{:.3})'",
             filter_escape(Path::new(&font), &store.dir()),
             text_escape(&t.content),
             t.size,
             t.color,
+            x,
             y,
             t.at.start.secs_f64(),
             t.at.end.secs_f64()
@@ -394,27 +484,93 @@ fn build_filter_graph(
     }
 
     let mut graph = String::new();
-    if vf.is_empty() {
-        graph.push_str("[0:v]null[v]");
-    } else {
+    let mut last = if vf.is_empty() {
         // `subtitles` is first in the chain so overlay text is not restyled by ASS.
-        graph.push_str(&format!("[0:v]{}[v]", vf.join(",")));
+        graph.push_str("[0:v]null[v0]");
+        "v0".to_string()
+    } else {
+        graph.push_str(&format!("[0:v]{}[v0]", vf.join(",")));
+        "v0".to_string()
+    };
+
+    // Images are composited after the text, one node each, because `overlay`
+    // takes exactly two inputs and cannot be chained inside one filter string.
+    let mut n = 0usize;
+    for (id, input) in image_inputs {
+        let Some(Overlay::Image(img)) = project.tracks.overlays.iter().find(|o| o.id() == id)
+        else {
+            continue;
+        };
+        n += 1;
+        let w = img.px_width(canvas_width);
+        let m = img.px_margin(canvas_width);
+        let (x, y) = img.xy_expr();
+        let x = x.replace('m', &m.to_string());
+        let y = y.replace('m', &m.to_string());
+        graph.push_str(&format!(
+            ";[{input}:v]format=rgba,scale={w}:-1,colorchannelmixer=aa={:.3}[img{n}]",
+            img.opacity
+        ));
+        graph.push_str(&format!(
+            ";[{last}][img{n}]overlay=x={x}:y={y}:enable='between(t,{:.3},{:.3})'[v{n}]",
+            img.at.start.secs_f64(),
+            img.at.end.secs_f64()
+        ));
+        last = format!("v{n}");
     }
+    graph.push_str(&format!(";[{last}]null[v]"));
 
     if has_bed {
         let bed = project.tracks.audio.as_ref().unwrap();
         if bed.gain_db.abs() > 0.01 {
             graph.push_str(&format!(
-                ";[1:a]volume={:.2}dB[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]",
+                ";[{bed_input}:a]volume={:.2}dB[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]",
                 bed.gain_db
             ));
         } else {
-            graph.push_str(";[0:a][1:a]amix=inputs=2:duration=first:normalize=0[a]");
+            graph.push_str(&format!(
+                ";[0:a][{bed_input}:a]amix=inputs=2:duration=first:normalize=0[a]"
+            ));
         }
     } else {
         graph.push_str(";[0:a]anull[a]");
     }
     Ok(graph)
+}
+
+/// One xfade per pair, chained; audio acrossfades in step.
+///
+/// The offset for pair i is everything before it minus every transition so far,
+/// which is why the running total is kept rather than each clip's length.
+fn xfade_graph(segments: &[Segment]) -> String {
+    // Chains joined with ';' — a leading separator is an empty filter, which
+    // ffmpeg rejects as "No such filter: ''".
+    let mut chains: Vec<String> = Vec::new();
+    let mut total: i64 = 0;
+    let mut last_v = "0:v".to_string();
+    let mut last_a = "0:a".to_string();
+    for (i, seg) in segments.iter().enumerate().skip(1) {
+        let prev = &segments[i - 1];
+        total += prev.duration.micros();
+        let (kind, dur) = match &seg.transition {
+            Some(t) => (t.kind.xfade(), t.duration.micros().max(1)),
+            None => ("fade", 1), // a cut is a 1us fade: inaudible, keeps one graph
+        };
+        let offset = ((total - dur) as f64 / 1e6).max(0.0);
+        let d = dur as f64 / 1e6;
+        chains.push(format!(
+            "[{last_v}][{i}:v]xfade=transition={kind}:duration={d:.6}:offset={offset:.6}[x{i}]"
+        ));
+        chains.push(format!(
+            "[{last_a}][{i}:a]acrossfade=d={d:.6}:c1=tri:c2=tri[a{i}]"
+        ));
+        last_v = format!("x{i}");
+        last_a = format!("a{i}");
+        total -= dur;
+    }
+    chains.push(format!("[{last_v}]null[v]"));
+    chains.push(format!("[{last_a}]anull[a]"));
+    chains.join(";")
 }
 
 fn concat_line(path: &Path) -> String {
@@ -490,6 +646,34 @@ mod tests {
         assert_eq!(atempo_chain(1.5), vec!["atempo=1.500000"]);
         assert_eq!(atempo_chain(4.0), vec!["atempo=2.0", "atempo=2.000000"]);
         assert_eq!(atempo_chain(0.25), vec!["atempo=0.5", "atempo=0.500000"]);
+    }
+
+    fn seg(secs: f64, tx: Option<(crate::project::TransitionKind, f64)>) -> Segment {
+        Segment {
+            key: format!("k{secs}"),
+            path: PathBuf::from(format!("/tmp/{secs}.mp4")),
+            duration: Time::from_secs_f64(secs),
+            transition: tx.map(|(kind, d)| crate::project::Transition {
+                kind,
+                duration: Time::from_secs_f64(d),
+            }),
+        }
+    }
+
+    #[test]
+    fn xfade_offsets_run_behind_the_cumulative_timeline() {
+        use crate::project::TransitionKind;
+        let segs = vec![
+            seg(3.0, None),
+            seg(3.0, Some((TransitionKind::Crossfade, 0.6))),
+            seg(3.0, Some((TransitionKind::DipToBlack, 0.6))),
+        ];
+        let g = xfade_graph(&segs);
+        assert!(g.contains("xfade=transition=fade:duration=0.600000:offset=2.400000"));
+        assert!(g.contains("xfade=transition=fadeblack:duration=0.600000:offset=4.800000"));
+        assert!(g.contains("acrossfade=d=0.600000"));
+        // a hard cut still needs a chain, so it becomes a 1us fade
+        assert!(!g.starts_with(';'), "leading ';' is an empty filter");
     }
 
     #[test]

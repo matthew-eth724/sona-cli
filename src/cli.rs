@@ -113,6 +113,43 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Place an image over the picture: a logo, a lower third, a sting.
+    Image {
+        source: PathBuf,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+        /// top, top-left, top-right, center, bottom, bottom-left, bottom-right.
+        #[arg(long, default_value = "bottom-left")]
+        pos: String,
+        /// Width in pixels at the project canvas; stored as a fraction of it.
+        #[arg(long)]
+        width: Option<u32>,
+        #[arg(long, default_value = "1.0")]
+        opacity: f32,
+        /// Distance from the canvas edge, in pixels at the project canvas.
+        #[arg(long)]
+        margin: Option<u32>,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Set (or clear) the transition that brings a clip in.
+    Transition {
+        id: String,
+        /// crossfade or dip_to_black.
+        #[arg(long, default_value = "crossfade")]
+        kind: String,
+        #[arg(long, default_value = "500ms")]
+        duration: String,
+        /// Remove the transition: a hard cut.
+        #[arg(long)]
+        none: bool,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Set a music bed played under the clips.
     Audio {
         source: PathBuf,
@@ -309,6 +346,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
                 let id = store.project.next_id("clip");
                 let clip = Clip {
+                    transition: None,
                     id: id.clone(),
                     source: abs.to_string_lossy().to_string(),
                     src_in: from.unwrap_or(Time::ZERO),
@@ -469,7 +507,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .tracks
                 .overlays
                 .iter()
-                .position(|o| matches!(o, Overlay::Text(t) if t.id == id))
+                .position(|o| o.id() == id)
             {
                 store.project.tracks.overlays.remove(pos);
                 finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
@@ -515,6 +553,111 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             store.project.tracks.overlays.push(Overlay::Text(t));
             finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
+        }
+        Cmd::Image { source, from, to, pos, width, opacity, margin, dry_run } => {
+            let mut store = Store::open(&path)?;
+            if !dry_run {
+                crate::history::record(&store, "image")?;
+            }
+            let mut media = MediaIndex::default();
+            let source = std::fs::canonicalize(&source)
+                .with_context(|| format!("no such file: {}", source.display()))?;
+            let at = TimeRange::new(Time::parse(&from)?, Time::parse(&to)?)?;
+            let anchor = match pos.as_str() {
+                "top" => Anchor::Top,
+                "top-left" => Anchor::TopLeft,
+                "top-right" => Anchor::TopRight,
+                "center" => Anchor::Center,
+                "bottom" => Anchor::Bottom,
+                "bottom-left" => Anchor::BottomLeft,
+                "bottom-right" => Anchor::BottomRight,
+                other => bail!(
+                    "usage: --pos must be top|top-left|top-right|center|bottom|bottom-left|bottom-right, got {other}"
+                ),
+            };
+            if !(0.0..=1.0).contains(&opacity) {
+                bail!("usage: --opacity is 0.0 to 1.0");
+            }
+            let canvas_w = store.project.canvas.width;
+            let px = width.unwrap_or((canvas_w as f32 * 0.25) as u32).max(2);
+            let m = margin.unwrap_or((canvas_w as f32 * 0.03) as u32);
+            let id = store.project.next_id("image");
+            store.project.tracks.overlays.push(Overlay::Image(
+                crate::project::ImageOverlay {
+                    id: id.clone(),
+                    source: source.to_string_lossy().to_string(),
+                    at,
+                    anchor,
+                    width: px as f32 / canvas_w as f32,
+                    opacity,
+                    margin: m as f32 / canvas_w as f32,
+                },
+            ));
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({"changed": [id], "invalidated": 1, "width_px": px}),
+            )
+        }
+        Cmd::Transition { id, kind, duration, none, dry_run } => {
+            let mut store = Store::open(&path)?;
+            if !dry_run {
+                crate::history::record(&store, "transition")?;
+            }
+            let mut media = MediaIndex::default();
+            let pos = store
+                .project
+                .tracks
+                .video
+                .iter()
+                .position(|c| c.id == id)
+                .with_context(|| format!("usage: no clip {id}"))?;
+            if pos == 0 {
+                bail!("usage: {id} is the first clip; it has nothing to transition from");
+            }
+            let kind = if none {
+                None
+            } else {
+                Some(
+                    crate::project::TransitionKind::parse(&kind)
+                        .with_context(|| format!("usage: --kind crossfade|dip_to_black, got {kind}"))?,
+                )
+            };
+            let dur = Time::parse(&duration)?;
+            // Longer than its neighbour and the graph can't be built honestly.
+            let prev = store.project.tracks.video[pos - 1].id.clone();
+            let shorter = store
+                .project
+                .tracks
+                .video
+                .iter()
+                .filter(|c| c.id == id || c.id == prev)
+                .filter_map(|c| {
+                    media
+                        .get(&store.resolve(&c.source))
+                        .ok()
+                        .map(|m| c.out_duration(m.duration))
+                })
+                .min();
+            if let (Some(shorter), false) = (shorter, none) {
+                if dur >= shorter {
+                    bail!(
+                        "usage: a {} transition between {prev} and {id} is too long (shorter neighbour is {})",
+                        dur, shorter
+                    );
+                }
+            }
+            store.project.tracks.video[pos].transition = kind.map(|k| crate::project::Transition {
+                kind: k,
+                duration: dur,
+            });
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({"changed": [id], "invalidated": 1, "kind": if none { "cut".into() } else { kind_label(&kind) }}),
+            )
         }
         Cmd::Audio { source, gain, dry_run } => {
             let mut store = Store::open(&path)?;
@@ -1179,6 +1322,14 @@ fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
     Ok(cuts)
 }
 
+fn kind_label(k: &Option<crate::project::TransitionKind>) -> String {
+    match k {
+        Some(crate::project::TransitionKind::Crossfade) => "crossfade".into(),
+        Some(crate::project::TransitionKind::DipToBlack) => "dip_to_black".into(),
+        None => "cut".into(),
+    }
+}
+
 fn project_index(store: &Store) -> Result<index::Index> {
     let r = store
         .project
@@ -1224,7 +1375,7 @@ mod rm_tests {
             "nothing called {id}",
             "id == \"captions\"",
             "id == \"audio\"",
-            "matches!(o, Overlay::Text(t) if t.id == id)",
+            ".position(|o| o.id() == id)",
         ] {
             assert!(src.contains(needle), "rm lost a case: {needle}");
         }
