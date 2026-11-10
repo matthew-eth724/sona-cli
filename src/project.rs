@@ -550,9 +550,9 @@ impl Project {
             if l.start.micros() < 0 {
                 bail!("layer {} starts before zero", l.id);
             }
-            if l.clips.is_empty() {
-                bail!("layer {} has no clips", l.id);
-            }
+            // An empty layer is legal to store: `init` creates one, and `add`
+            // needs to open the project before it can put a clip in it. Planning
+            // is where "no clips" becomes an error.
             if let Some(m) = &l.motion {
                 if m.keys.is_empty() {
                     bail!("layer {} has a camera with no keys", l.id);
@@ -1040,6 +1040,15 @@ mod tests {
         });
         let order: Vec<&str> = p.by_z().iter().map(|l| l.id.as_str()).collect();
         assert_eq!(order, ["below", "main", "above"]);
+    }
+
+    #[test]
+    fn a_freshly_created_layer_may_be_empty() {
+        // init writes a layer with no clips, and every command opens through
+        // validate, so this has to pass or nothing works after init.
+        let p = Project::new(640, 360, Rational::new(30, 1));
+        assert!(p.validate().is_ok());
+        assert_eq!(p.main_layer().unwrap().clips.len(), 0);
     }
 
     #[test]
