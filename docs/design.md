@@ -566,6 +566,11 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **Loudness as a render flag, one pass.** `--loudnorm` appends a step that copies
+  the video and re-encodes audio through `loudnorm`, with the targets in the cache
+  key so different masters coexist. It is one-pass on purpose: a two-pass
+  measurement would make the apply step's argv depend on a run, and `sona plan`
+  would stop being a plan. The trade is dynamic gain across the program.
 - **Ducking from the index.** The bed's gain is a `volume=…:eval=frame`
   expression built from word times, not a signal compressor: trapezoids per
   phrase, summed and clamped so overlaps never exceed `--db`. Source time is

@@ -480,7 +480,8 @@ This is the debugging lever: if the render is wrong, the argv says why.
 ## render
 
 ```
-sona render [-o out.mp4] [--preview] [--timeout 3600]
+sona render [-o out.mp4] [--preview] [--loudnorm] [--lufs -14] [--true-peak -1]
+            [--lra 11] [--timeout 3600]
 ```
 
 Executes the plan into `.sona/cache/`, then copies the final step to `-o`.
@@ -506,6 +507,30 @@ $ sona render --preview
 
 On a 20-second 1080x1920 clip: 1.6 s preview against 7.1 s final, same 4 vCPUs.
 Iterate on the preview, ship the final.
+
+`--loudnorm` adds an EBU R128 pass as a final step: video is **copied**, only the
+audio is re-encoded through ffmpeg's `loudnorm`. Targets are `--lufs` (integrated,
+default `-14`), `--true-peak` (default `-1`) and `--lra` (default `11`).
+
+```console
+$ sona render --loudnorm -o loud.mp4
+{"ok": true, "loudness": {"i": -14.0, "tp": -1.0, "lra": 11.0},
+ "steps": {"total": 2, "ran": 1, "reused": 1}}
+```
+
+Measured on a −47.8 LUFS source: `-14.0 LUFS` after, with the base assembly
+reused rather than re-encoded. A different `--lufs` is a different cache entry, so
+a −20 dB master and a −14 dB master coexist.
+
+It is **one-pass** `loudnorm`, chosen so every step's argv stays knowable at plan
+time — the thing `sona plan` promises. Two-pass measurement would make the apply
+step depend on a run. The cost is that the gain is applied dynamically across the
+program rather than measured once; for a single delivered file that is the usual
+trade, and if you need exact integrated numbers you can measure the result with
+`ffmpeg -af ebur128` and decide.
+
+The loudness pass is orthogonal to `--preview`: a proxy can be loudness-targeted
+too, which is useful for checking a phone speaker mix before the full render.
 
 ## frames
 

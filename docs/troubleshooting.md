@@ -59,6 +59,16 @@ re-see the cue count.
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
+**Loudness lands a dB or two off target.** One-pass `loudnorm` applies gain
+dynamically, so a program with long quiet and loud sections can miss the target
+slightly. Measure the file (`ffmpeg -i out.mp4 -af ebur128 -f null -`) and adjust
+`--lufs`, or split the program. The video stream is never re-encoded, so the fix
+is cheap.
+
+**A loudness render re-runs the whole assembly.** It should not: the loudness step
+is appended after the existing ones. If `ran` equals `total`, something upstream
+changed too — check `sona plan --loudnorm`.
+
 **Ducking is off by a few seconds.** The spans are mapped through the clips at the
 moment you run `sona duck`. Re-cut the timeline and they go stale; `duck_stale`
 says so and `sona duck` re-maps them. If a clip is not cut from the indexed file,

@@ -208,6 +208,36 @@ pub fn duck_expression(spans: &[(Time, Time)], db: f32, ramp: Time) -> Option<St
     ))
 }
 
+/// EBU R128 loudness targeting, applied as a final pass over the assembled
+/// program.
+///
+/// One-pass `loudnorm` is deliberately chosen: it keeps every step's argv
+/// knowable at plan time, which is what `sona plan` promises. A two-pass
+/// measurement would make the apply step's argv depend on a run, and the plan
+/// would stop being a plan.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Loudness {
+    pub i: f32,
+    pub tp: f32,
+    pub lra: f32,
+}
+
+impl Loudness {
+    pub const DEFAULT: Loudness = Loudness {
+        i: -14.0,
+        tp: -1.0,
+        lra: 11.0,
+    };
+
+    fn filter(&self) -> String {
+        format!("loudnorm=I={}:TP={}:LRA={}", self.i, self.tp, self.lra)
+    }
+
+    fn key_parts(&self) -> String {
+        format!("loudnorm|{}|{}|{}", self.i, self.tp, self.lra)
+    }
+}
+
 /// One normalized clip on its way into the assemble stage.
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -236,6 +266,7 @@ pub fn plan(
     media: &mut MediaIndex,
     out: &Path,
     profile: Profile,
+    loudness: Option<Loudness>,
 ) -> Result<RenderPlan> {
     let project = &store.project;
     if project.tracks.video.is_empty() {
@@ -478,6 +509,40 @@ pub fn plan(
         inv.push(arg(&output));
         steps.push(Step {
             label: "burn captions/text, mix audio".into(),
+            key: key.clone(),
+            invocation: inv,
+            sidecar: None,
+            output: output.clone(),
+        });
+        base_key = key;
+        base_path = output;
+    }
+
+    // Final pass: loudness targeting. Video is copied, only audio is touched.
+    if let Some(l) = loudness {
+        let key = cache::hash(&[
+            base_key.clone(),
+            "loudnorm".into(),
+            version.clone(),
+            profile.tag().into(),
+            l.key_parts(),
+        ]);
+        let output = cache::path(&cache_dir, &key, "mp4");
+        let mut inv = Invocation::new();
+        inv.input(&base_path);
+        inv.push("-map").push("0:v:0").push("-map").push("0:a:0");
+        inv.push("-c:v").push("copy");
+        inv.push("-af").push(l.filter());
+        inv.push("-c:a").push("aac");
+        match profile {
+            Profile::Final => inv.push("-b:a").push("192k"),
+            Profile::Preview => inv.push("-b:a").push("64k"),
+        };
+        inv.push("-ar").push("48000");
+        inv.push("-movflags").push("+faststart");
+        inv.push(arg(&output));
+        steps.push(Step {
+            label: format!("loudness {} LUFS", l.i),
             key: key.clone(),
             invocation: inv,
             sidecar: None,

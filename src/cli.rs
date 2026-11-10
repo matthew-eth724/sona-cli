@@ -265,6 +265,15 @@ enum Cmd {
         /// Print the preview (proxy) plan instead of the final one.
         #[arg(long)]
         preview: bool,
+        /// Include the loudness pass.
+        #[arg(long)]
+        loudnorm: bool,
+        #[arg(long, default_value = "-14", allow_hyphen_values = true)]
+        lufs: f32,
+        #[arg(long, default_value = "-1", allow_hyphen_values = true)]
+        true_peak: f32,
+        #[arg(long, default_value = "11")]
+        lra: f32,
     },
     /// Render the project. `--preview` writes a small proxy for cheap iteration.
     Render {
@@ -275,6 +284,16 @@ enum Cmd {
         /// Low resolution, low frame rate, own cache. For looking, not shipping.
         #[arg(long)]
         preview: bool,
+        /// EBU R128 loudness targeting on the finished program.
+        #[arg(long)]
+        loudnorm: bool,
+        /// Integrated loudness target in LUFS.
+        #[arg(long, default_value = "-14", allow_hyphen_values = true)]
+        lufs: f32,
+        #[arg(long, default_value = "-1", allow_hyphen_values = true)]
+        true_peak: f32,
+        #[arg(long, default_value = "11")]
+        lra: f32,
     },
     /// List the snapshots taken before each mutation, newest first.
     History {
@@ -1197,7 +1216,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
             let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
-            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile)?;
+            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile, None)?;
             let source = plan.last_output().to_path_buf();
             if !source.exists() {
                 bail!(
@@ -1236,15 +1255,16 @@ fn dispatch(cli: Cli) -> Result<()> {
             ok(json!({"frames": produced}), &[]);
             Ok(())
         }
-        Cmd::Plan { preview } => {
+        Cmd::Plan { preview, loudnorm, lufs, true_peak, lra } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
             let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
-            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile)?;
+            let loudness = loudness_arg(loudnorm, lufs, true_peak, lra);
+            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile, loudness)?;
             ok(graph::plan_json(&plan, profile), &plan.warnings);
             Ok(())
         }
-        Cmd::Render { out, timeout, preview } => {
+        Cmd::Render { out, timeout, preview, loudnorm, lufs, true_peak, lra } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
             let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
@@ -1252,7 +1272,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 PathBuf::from(if preview { "preview.mp4" } else { "out.mp4" })
             });
             let out_path = store.resolve(&target.to_string_lossy());
-            let plan = graph::plan(&store, &mut media, &out_path, profile)?;
+            let loudness = loudness_arg(loudnorm, lufs, true_peak, lra);
+            let plan = graph::plan(&store, &mut media, &out_path, profile, loudness)?;
             let summary = render::execute(&plan, Duration::from_secs(timeout))?;
             let canvas = profile.canvas(&store.project.canvas);
             ok(
@@ -1262,6 +1283,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     "size": format!("{}x{}", canvas.0, canvas.1),
                     "fps": profile.fps(store.project.canvas.fps).to_string(),
                     "duration": plan.duration.to_string(),
+                    "loudness": loudness.map(|l| json!({"i": l.i, "tp": l.tp, "lra": l.lra})),
                     "steps": {"total": summary.total, "ran": summary.ran, "reused": summary.reused},
                 }),
                 &plan.warnings,
@@ -1429,6 +1451,13 @@ fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
         }
     }
     Ok(cuts)
+}
+
+fn loudness_arg(on: bool, lufs: f32, tp: f32, lra: f32) -> Option<graph::Loudness> {
+    if !on {
+        return None;
+    }
+    Some(graph::Loudness { i: lufs, tp, lra })
 }
 
 fn kind_label(k: &Option<crate::project::TransitionKind>) -> String {

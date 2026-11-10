@@ -65,6 +65,11 @@ sona cut clip_1 --fillers --dry-run
 **Every warning and error carries a `fix`.** Read it: it is the command that
 clears the problem, usually with your own ids already filled in.
 
+**Loudness is a delivery flag, not an iteration flag.** `--loudnorm` costs one
+extra encode of the audio and nothing else, so use it on the render you keep.
+Targets: `--lufs -14` for web, `--lufs -16` for podcast, `--lufs -23` for
+broadcast EBU R128.
+
 **Duck the bed from the transcript, not by ear.** `sona duck --db -18` builds the
 gain envelope from word times, so the music drops exactly where someone speaks
 and lifts in the gaps. Re-run it after any change to the cut: `duck_stale` tells

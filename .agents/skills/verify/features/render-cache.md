@@ -33,11 +33,27 @@ $SONA trim clip_2 --to 4s
 $SONA render -o out.mp4 | jq '.steps'      # {"ran":3,"reused":1,...}
 ```
 
+## Loudness
+
+```bash
+$SONA render --loudnorm -o loud.mp4 | jq '.loudness, .steps'
+ffmpeg -hide_banner -i loud.mp4 -af ebur128 -f null - 2>&1 | grep -A1 'Integrated'
+```
+
+Measured: a −47.8 LUFS source becomes −14.0 LUFS. The pass copies video and only
+re-encodes audio, so it adds one cheap step: `{"total":2,"ran":1,"reused":1}` on a
+project that was already assembled.
+
 ## Gotchas
 
 - Preview and final share no cache entries. `reused: 0` after a final render
   following a preview is correct, not a bug.
 - `frames` reads final by default; pass `--preview` to read the proxy.
+- `--loudnorm` is one-pass, so the target is approached dynamically: check with
+  `ebur128` rather than assuming −14.0. Different `--lufs` values are different
+  cache entries, so masters coexist.
+- The loudness step copies video. If `ran` equals `total` on a loudness-only
+  change, an upstream step moved too.
 
 - **`ran: 0` after an edit is a cache-key bug**, not a fast render. The step key
   must include its own argv; the decorate step once keyed only on its inputs and
