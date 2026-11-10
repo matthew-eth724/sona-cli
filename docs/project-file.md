@@ -101,6 +101,24 @@ A tagged array; the tag is `kind`.
 | `size` | u32 | `48` | font size in canvas pixels |
 | `color` | string | `white` | any ffmpeg colour |
 
+## tracks.index
+
+A pointer to the word index this project reads. The words themselves live in
+`.sona/index/<audio_hash>.json`; the project only records which one is current.
+
+| field | type | notes |
+| --- | --- | --- |
+| `audio_hash` | string | SHA-256 of the extracted 16 kHz mono audio |
+| `source` | string | the media file the audio came from |
+| `transcript` | string | the transcript file that produced the words |
+| `provider` | string | `gemini`, `deepgram` or `srt` |
+| `language` | string | optional, when the provider reported one |
+| `words` | number | count, for a cheap sanity check |
+| `approximate` | bool | omitted when false; true when timings were interpolated from SRT |
+
+Deleting `.sona/index/` leaves this pointer dangling, and `view`/`find` will say
+`no_index` until `sona index` runs again.
+
 ## tracks.captions
 
 | field | type | default | notes |

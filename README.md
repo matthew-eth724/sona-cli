@@ -37,6 +37,9 @@ So `sona` is a compiler, not a flag translator:
   seconds without reading vendor docs.
 - **`sona frames` gives the agent eyes** — stills and contact sheets sized for a
   vision model.
+- **`sona view` and `sona find` make reading cheap.** An indexed transcript
+  prints as a handful of text lines with stable word ids (`w1`, `w2`, …), so
+  finding a cut point costs a few hundred bytes instead of a timeline walk.
 
 ## Install
 
@@ -61,6 +64,7 @@ filters exist, which font `drawtext` will use, and whether ASR keys are visible.
 | setup | `init` `doctor` |
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
 | layers | `text` `audio` `caption` |
+| reading | `index` `view` `find` |
 | output | `plan` `render` `frames` |
 
 Full reference: [docs/cli.md](docs/cli.md).

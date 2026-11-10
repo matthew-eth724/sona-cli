@@ -33,6 +33,23 @@ pub struct Tracks {
     pub overlays: Vec<Overlay>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub captions: Option<Captions>,
+    /// Which word index this project is reading. The index itself lives in
+    /// `.sona/index/<audio_hash>.json`; this is only the pointer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<IndexRef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IndexRef {
+    pub audio_hash: String,
+    pub source: String,
+    pub transcript: String,
+    pub provider: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    pub words: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub approximate: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -252,6 +269,10 @@ impl Clip {
     pub fn out_duration(&self, media_duration: Time) -> Time {
         Time::from_secs_f64(self.source_span(media_duration).secs_f64() / self.speed)
     }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn absolute(p: &Path) -> PathBuf {

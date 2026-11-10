@@ -564,6 +564,15 @@ Two behaviours changed after that run:
   `ok:true` with no warning until `inspect` was run; `add`/`trim`/`speed`/`move`/
   `rm` now attach the resulting `warnings[]`.
 
+Added after the first build, for the clipping workflow:
+
+- **`sona index` / `view` / `find`.** A word index keyed by the SHA-256 of the
+  extracted 16 kHz mono audio, with stable `w1..wN` ids, read back as compact text
+  lines. `view` and `find` are the documented exception to "stdout is one JSON
+  object": they are read views, so they print text, take `--json` for the
+  envelope, and keep JSON for errors. Measured at 970 bytes against 2,275 for the
+  same 30-second range, which is the whole point of the exception.
+
 Unimplemented on purpose, still in the plan: ASR adapters (fixtures are
 committed), image overlays, reframe presets beyond Fit/Fill, audio ducking,
 transition/xfade between clips, `--preview` quality tier.

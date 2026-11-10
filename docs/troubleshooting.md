@@ -19,6 +19,7 @@ $ sona doctor
 | `unreadable` | 3 | ffprobe cannot demux the file | re-encode the source, or check it is really a video |
 | `ffmpeg_failed` | 4 | one render step failed | `sona plan`, find that step, read its argv |
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `sona <cmd> --help` |
+| `no_index` | 2 | `view`/`find` ran without an index, or `.sona/index/` was deleted | `sona index --from <transcript>` |
 | `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
 
 ## Warnings
@@ -55,6 +56,18 @@ re-see the cue count.
 **Audio is silent after adding a music bed.** `amix` ends with the *first* input,
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
+
+**`find` returns nothing but you can see the words.** Matching ignores case and
+punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and
+a phrase split by a long pause matches only inside one utterance. Search one
+distinct word instead.
+
+**Index times do not line up with the video.** The index describes the audio
+file, in that file's time. If you indexed the original recording and are cutting
+a clip of it, source time is what `add --from/--to` wants, so they agree; if you
+indexed a different export, they do not. `sona index` warns `index_past_audio`
+when the transcript runs past the end of the audio, which catches the common
+version-skew mistake.
 
 **Two clips play out of sync after concatenation.** They should not: each clip is
 normalized to the canvas fps, SAR and channel layout first. If it happens, the

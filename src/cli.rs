@@ -5,7 +5,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::frames;
+use crate::{audio, frames, index, transcript};
 use crate::graph;
 use crate::media::MediaIndex;
 use crate::project::{Anchor, AudioBed, Captions, Clip, Overlay, Store, TextOverlay, Transform};
@@ -84,6 +84,32 @@ enum Cmd {
     },
     /// Attach an SRT to burn in.
     Caption { source: PathBuf },
+    /// Build the word index for a source's audio (cached by audio hash).
+    Index {
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        audio: Option<PathBuf>,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        language: Option<String>,
+    },
+    /// Print the indexed words in a range as compact text.
+    View {
+        #[arg(long)]
+        range: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search the index for a word or phrase.
+    Find {
+        query: String,
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
     /// Summary plus diagnostics for the current project.
     Inspect,
     /// Render review stills or a contact sheet.
@@ -353,6 +379,155 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
+        Cmd::Index { from, audio: audio_arg, force, language } => {
+            let mut store = Store::open(&path)?;
+            let source = match audio_arg {
+                Some(p) => std::fs::canonicalize(&p)
+                    .with_context(|| format!("no such file: {}", p.display()))?,
+                None => {
+                    // Default to the project's source, so a re-index after
+                    // changing the transcript does not need --audio again.
+                    if let Some(first) = store.project.tracks.video.first() {
+                        store.resolve(&first.source)
+                    } else if let Some(existing) = &store.project.tracks.index {
+                        PathBuf::from(&existing.source)
+                    } else {
+                        bail!("usage: no clips yet; pass --audio <file>")
+                    }
+                }
+            };
+            let fp = audio::fingerprint(&store, &source)?;
+            let transcript_path = std::fs::canonicalize(&from)
+                .with_context(|| format!("no such file: {}", from.display()))?;
+            let transcript_hash = audio::sha256_file(&transcript_path)?;
+            let cache_root = store.dir().join(".sona");
+            let idx_path = index::Index::path(&cache_root, &fp.sha256);
+
+            let mut cached = false;
+            let idx = match index::Index::load(&idx_path) {
+                Ok(existing) if !force && existing.transcript_hash == transcript_hash => {
+                    cached = true;
+                    existing
+                }
+                _ => {
+                    let mut parsed = transcript::parse_file(&transcript_path)?;
+                    index::assign_ids(&mut parsed.words);
+                    let idx = index::Index {
+                        version: index::VERSION,
+                        audio_hash: fp.sha256.clone(),
+                        audio_duration: fp.duration,
+                        transcript_hash,
+                        provider: parsed.provider,
+                        language: language.or(parsed.language),
+                        approximate: parsed.approximate,
+                        words: parsed.words,
+                    };
+                    idx.save(&idx_path)?;
+                    idx
+                }
+            };
+
+            store.project.tracks.index = Some(crate::project::IndexRef {
+                audio_hash: fp.sha256.clone(),
+                source: source.to_string_lossy().to_string(),
+                transcript: transcript_path.to_string_lossy().to_string(),
+                provider: idx.provider.clone(),
+                language: idx.language.clone(),
+                words: idx.words.len(),
+                approximate: idx.approximate,
+            });
+            store.save()?;
+            let mut warnings = Vec::new();
+            if let (Some(last), dur) = (idx.words.last(), idx.audio_duration) {
+                if last.end.micros() > dur.micros() + 2_000_000 {
+                    warnings.push(crate::report::Diagnostic::new(
+                        "index_past_audio",
+                        "words[-1].end",
+                        format!(
+                            "the transcript ends at {} but the audio is only {}",
+                            last.end, dur
+                        ),
+                    ));
+                }
+            }
+            ok(
+                json!({
+                    "audio_hash": fp.sha256,
+                    "audio_duration": idx.audio_duration.to_string(),
+                    "provider": idx.provider,
+                    "language": idx.language,
+                    "approximate": idx.approximate,
+                    "words": idx.words.len(),
+                    "cached": cached,
+                    "index": idx_path.display().to_string(),
+                }),
+                &warnings,
+            );
+            Ok(())
+        }
+        Cmd::View { range, json: as_json } => {
+            let store = Store::open(&path)?;
+            let idx = project_index(&store)?;
+            let (start, end) = parse_range(&range)?;
+            let lines: Vec<index::Utterance> = idx
+                .utterances()
+                .into_iter()
+                .filter(|u| u.end > start && u.start < end)
+                .collect();
+            if as_json {
+                let body: Vec<serde_json::Value> = lines
+                    .iter()
+                    .map(|u| json!({
+                        "start": u.start.to_string(),
+                        "end": u.end.to_string(),
+                        "first": u.first,
+                        "last": u.last,
+                        "text": u.text,
+                    }))
+                    .collect();
+                ok(
+                    json!({"range": {"start": start.to_string(), "end": end.to_string()}, "lines": body}),
+                    &[],
+                );
+            } else if lines.is_empty() {
+                eprintln!("view: no words between {start} and {end}");
+            } else {
+                for u in &lines {
+                    if !crate::report::emit_line(&index::format_line(u)) {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
+        Cmd::Find { query, limit, json: as_json } => {
+            let store = Store::open(&path)?;
+            let idx = project_index(&store)?;
+            let hits: Vec<index::Hit> = idx.find(&query).into_iter().take(limit).collect();
+            if as_json {
+                let body: Vec<serde_json::Value> = hits
+                    .iter()
+                    .map(|h| json!({
+                        "start": h.utterance.start.to_string(),
+                        "end": h.utterance.end.to_string(),
+                        "first": h.utterance.first,
+                        "last": h.utterance.last,
+                        "match": idx.words[h.utterance.first_i + h.match_start..h.utterance.first_i + h.match_start + h.match_len]
+                            .iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" "),
+                        "text": h.utterance.text,
+                        "line": index::format_hit(&idx, h),
+                    }))
+                    .collect();
+                ok(json!({"query": query, "hits": body}), &[]);
+            } else {
+                for h in &hits {
+                    if !crate::report::emit_line(&index::format_hit(&idx, h)) {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
         Cmd::Inspect => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
@@ -381,6 +556,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                     "overlays": store.project.tracks.overlays.len(),
                     "captions": store.project.tracks.captions.is_some(),
                     "audio_bed": store.project.tracks.audio.is_some(),
+                    "index": store.project.tracks.index.as_ref().map(|i| json!({
+                        "audio_hash": i.audio_hash, "words": i.words,
+                        "provider": i.provider, "approximate": i.approximate,
+                    })),
                 }),
                 &diags,
             );
@@ -469,6 +648,32 @@ fn after_edit(store: &Store, media: &mut MediaIndex) -> (serde_json::Value, Vec<
     let duration = store.project.duration(media);
     let warnings = store.project.diagnose(media);
     (json!(duration.to_string()), warnings)
+}
+
+fn project_index(store: &Store) -> Result<index::Index> {
+    let r = store
+        .project
+        .tracks
+        .index
+        .as_ref()
+        .context("no_index: run `sona index --from <transcript.json|.srt>` first")?;
+    index::Index::load(&index::Index::path(
+        &store.dir().join(".sona"),
+        &r.audio_hash,
+    ))
+}
+
+/// `4:12-4:58`, `00:00:04.500-00:00:10.000`.
+fn parse_range(raw: &str) -> Result<(Time, Time)> {
+    let (a, b) = raw
+        .split_once('-')
+        .context("usage: --range START-END, e.g. --range 4:12-4:58")?;
+    let start = Time::parse(a)?;
+    let end = Time::parse(b)?;
+    if end <= start {
+        bail!("usage: --range must end after it starts");
+    }
+    Ok((start, end))
 }
 
 fn parse_size(s: &str) -> Result<(u32, u32)> {

@@ -1,5 +1,18 @@
 //! One JSON object on stdout, always. Exit codes by class.
 use serde_json::{json, Value};
+use std::io::Write;
+
+/// Writes one line to stdout and reports whether it landed. A downstream
+/// `head` closes the pipe; that is a normal end of output, not a panic.
+pub fn emit_line(line: &str) -> bool {
+    let out = std::io::stdout();
+    let mut lock = out.lock();
+    match writeln!(lock, "{line}") {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => false,
+        Err(_) => false,
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Diagnostic {
@@ -43,7 +56,7 @@ pub fn ok(mut data: Value, warnings: &[Diagnostic]) {
             );
         }
     }
-    println!("{}", serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()));
+    emit_line(&serde_json::to_string(&data).unwrap_or_else(|_| "{}".into()));
 }
 
 /// Exit non-zero with a one-line, actionable error.
@@ -52,7 +65,7 @@ pub fn fail(code: &str, message: impl Into<String>, fix: Option<String>) -> ! {
     if let Some(fix) = fix {
         err["fix"] = json!(fix);
     }
-    println!("{}", serde_json::to_string(&json!({"ok": false, "error": err})).unwrap());
+    emit_line(&serde_json::to_string(&json!({"ok": false, "error": err})).unwrap());
     eprintln!("{code}: {}", err["message"].as_str().unwrap_or(""));
     if let Some(fix) = err.get("fix").and_then(|f| f.as_str()) {
         eprintln!("fix: {fix}");

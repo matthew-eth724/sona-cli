@@ -50,6 +50,21 @@ one line.
 **Do not invent flags.** `sona <command> --help` is short and authoritative; a
 guessed flag is a 5-exit-code round trip.
 
+## Reading a long recording
+
+Do not dump a transcript into context. Index it once, then ask narrow questions:
+
+```bash
+sona index --from transcript.json --audio podcast.mp4   # once, cached by audio hash
+sona find "good memory"                                  # one line per hit, match bracketed
+sona view --range 0:11-0:19                              # ~10 lines, ids for anchoring
+```
+
+`view` and `find` print plain text lines (`start-end  firstId-lastId  text`), not
+the JSON envelope — that is what makes them cheap; add `--json` when a caller
+needs structure. The ids (`w27`) are stable for that index, so a caption or a
+cut you write can cite one instead of re-deriving a timecode.
+
 ## Editing the file vs running a command
 
 Both are supported and equivalent: the file is the API, the CLI is sugar. Use

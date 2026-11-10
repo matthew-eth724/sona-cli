@@ -167,6 +167,86 @@ problem.
 {"ok": true, "changed": ["captions"], "cues": 42, "invalidated": 1, "duration": "00:00:42.500"}
 ```
 
+## index
+
+```
+sona index --from <transcript> [--audio <file>] [--force] [--language <code>]
+```
+
+Builds the word index for a source's audio. Words get stable ids (`w1`, `w2`, …)
+and are cached by the **hash of the extracted 16 kHz mono audio**, so the same
+recording is indexed once no matter which container it arrives in.
+
+`--from` accepts a Gemini Transcribe response, a Deepgram nova-3 response, or an
+`.srt`/`.vtt` file. SRT only has cue times, so word times inside a cue are
+interpolated by character share and the index is marked `approximate: true`.
+
+`--audio` defaults to the first clip's source, then to the already-indexed
+source. The audio is downmixed to `.sona/audio/<key>.wav` on first use (deletable
+cache).
+
+```json
+{"ok": true, "audio_hash": "e6f429cf…", "audio_duration": "00:00:30.988",
+ "provider": "gemini", "words": 78, "cached": false,
+ "index": ".sona/index/e6f429cf….json"}
+```
+
+Re-running with the same audio and transcript reports `cached: true` and takes
+milliseconds. A different transcript re-indexes in place and the ids shift — they
+are stable for a given index, not across different transcripts.
+
+## view
+
+```
+sona view --range <start-end> [--json]
+```
+
+Prints the indexed words overlapping the range as one line per utterance:
+
+```console
+$ sona view --range 0:05-0:15
+00:03.8-00:06.4  w4-w11  It's been ages since I last saw you.
+00:06.7-00:08.4  w12-w16  How are you and Jackie?
+00:08.5-00:09.6  w17-w19  Yeah, good, thanks.
+00:10.1-00:11.3  w20-w23  And your new baby?
+00:11.5-00:12.4  w24-w26  George, isn't it?
+00:13.1-00:14.1  w27-w31  You've got a good memory.
+00:14.4-00:15.6  w32-w35  Yes, he's two now.
+```
+
+Each line is `start-end  firstId-lastId  text`. Utterance boundaries fall on a
+silence longer than 700 ms, sentence-ending punctuation, or a line getting too
+long. The ids are the handles you pass to `trim --from`/`--to` after converting
+the time, and the anchor for a caption you write by hand.
+
+`--json` returns the same lines as objects. For a 30-second range the text view
+is about **970 bytes against 2,275 for the JSON** — that difference is the whole
+reason these two commands print text.
+
+`sona view` and `sona find` are read views: stdout is plain text, not the usual
+single JSON object. Pass `--json` when a caller needs the envelope. Errors are
+still JSON, and the exit codes are unchanged.
+
+## find
+
+```
+sona find "<query>" [--limit 20] [--json]
+```
+
+Case- and punctuation-insensitive word-sequence match. One line per hit, with the
+matched span bracketed so the reason for the match is visible:
+
+```console
+$ sona find "good memory"
+00:12.6-00:14.4  w27-w31  You've got a [good memory.]
+
+$ sona find jackie
+00:06.7-00:08.4  w12-w16  How are you and [Jackie?]
+```
+
+No hits prints nothing and exits 0; add `--json` to get `{"hits": []}` explicitly.
+`--limit` caps the hits printed.
+
 ## inspect
 
 ```

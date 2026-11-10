@@ -18,6 +18,6 @@ if diff -q <(norm .claude) <(norm .agents) >/dev/null; then
 else
   echo "DRIFT: .agents and .claude disagree" >&2
   diff <(norm .claude) <(norm .agents) >&2 || true
-  echo "fix: rsync -a --delete .claude/ .agents/ then rewrite .claude/skills -> .agents/skills in the .agents copy" >&2
+  echo "fix: rm -rf .agents && cp -a .claude .agents, then rewrite .claude/skills -> .agents/skills in every .agents/*.md" >&2
   exit 1
 fi

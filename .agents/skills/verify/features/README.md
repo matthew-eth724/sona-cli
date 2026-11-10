@@ -11,7 +11,8 @@ proves it works. Drive the real command; never assert on an internal function.
 | [captions](captions.md) | `caption` | cue count parsed, pixels change in the caption band |
 | [render-cache](render-cache.md) | `plan` `render` | cold render `ran==total`; unchanged `reused==total`; one edit `ran<total` |
 | [review-frames](review-frames.md) | `frames` | PNG files exist at the requested times, sheet tiled |
+| [index](index.md) | `index` `view` `find` | word count matches the transcript, ids are `w1..wN`, second index is `cached: true` |
 | [audio-bed](audio-bed.md) | `audio` | residual RMS between with/without is well above silence |
 
-Unmapped for now: ASR (`caption auto`), multi-track video, keyframes. They are
-designed in `docs/design.md` and not implemented.
+Unmapped for now: ASR providers (`caption auto`), multi-track video, keyframes.
+They are designed in `docs/design.md` and not implemented.
