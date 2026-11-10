@@ -59,6 +59,30 @@ impl Profile {
         }
     }
 
+    /// Encoder settings for the *intermediate* normalize step. Deliberately
+    /// separate from `video_args` (used for the assemble/decorate hides): final
+    /// normalizes at crf 16 so the second-generation decorate pass starts from
+    /// headroom, while a proxy has no second generation to protect and should be
+    /// small. Without this split a preview was encoded at crf 16 and came out
+    /// 73 MB for eight minutes — larger than the source it was proxying.
+    fn normalize_args(self, inv: &mut Invocation) {
+        match self {
+            Profile::Final => {
+                inv.push("-c:v").push("libx264").push("-preset").push("veryfast");
+                inv.push("-crf").push("16").push("-pix_fmt").push("yuv420p");
+                inv.push("-c:a").push("aac").push("-b:a").push("192k").push("-ar").push("48000");
+            }
+            Profile::Preview => {
+                // ultrafast inflates the file badly: measured on an 8:47 4:3
+                // source, ultrafast crf30 gave 29.6 MB where veryfast crf32 gave
+                // 11.7 MB for about 3 s more wall time on the whole program.
+                inv.push("-c:v").push("libx264").push("-preset").push("veryfast");
+                inv.push("-crf").push("32").push("-pix_fmt").push("yuv420p");
+                inv.push("-c:a").push("aac").push("-b:a").push("64k").push("-ar").push("48000");
+            }
+        }
+    }
+
     fn video_args(self, inv: &mut Invocation) {
         let (crf, preset) = match self {
             Profile::Final => ("18", "veryfast"),
@@ -326,9 +350,7 @@ pub fn plan(
         } else {
             inv.push("-map").push("1:a:0");
         }
-        inv.push("-c:v").push("libx264").push("-preset").push("veryfast");
-        inv.push("-crf").push("16").push("-pix_fmt").push("yuv420p");
-        inv.push("-c:a").push("aac").push("-b:a").push("192k").push("-ar").push("48000");
+        profile.normalize_args(&mut inv);
         inv.push("-shortest");
         inv.push("-movflags").push("+faststart");
         inv.push("-f").push("mp4");
@@ -590,11 +612,15 @@ fn video_chain(clip: &Clip, project: &Project, profile: Profile) -> String {
         ),
     }];
     parts.push("setsar=1".into());
-    let fps = profile.fps(project.canvas.fps);
-    parts.push(format!("fps={}/{}", fps.num, fps.den));
+    // Retime *before* conforming to the canvas rate. The other order compresses
+    // timestamps after the stream is already 30 fps, and the muxer then reports
+    // 30.15 or 30.3 instead of 30 — measured on a 4:3 23.976 source at 1.5x, 2x
+    // and 3x.
     if (clip.speed - 1.0).abs() > f64::EPSILON {
         parts.push(format!("setpts=PTS/{:.6}", clip.speed));
     }
+    let fps = profile.fps(project.canvas.fps);
+    parts.push(format!("fps={}/{}", fps.num, fps.den));
     parts.join(",")
 }
 
@@ -836,6 +862,32 @@ mod tests {
         assert_eq!(p.fps(Rational::new(24, 1)).to_string(), "15");
         assert_eq!(p.fps(Rational::new(12, 1)).to_string(), "12");
         assert_eq!(Profile::Final.fps(Rational::new(30, 1)).to_string(), "30");
+    }
+
+    #[test]
+    fn speed_is_retimed_before_the_frame_rate_is_conformed() {
+        // The other order leaves the muxer reporting 30.15 / 30.2 / 30.3 fps
+        // instead of 30, measured against a 23.976 source.
+        let project = Project::new(768, 576, Rational::new(30, 1));
+        let mut clip = crate::project::Clip {
+            id: "clip_1".into(),
+            source: "/x.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: Some(Time::from_secs_f64(10.0)),
+            speed: 3.0,
+            transform: crate::project::Transform::Fit,
+            gain_db: 0.0,
+            transition: None,
+        };
+        let chain = video_chain(&clip, &project, Profile::Final);
+        let setpts = chain.find("setpts").expect("setpts in chain");
+        let fps = chain.find("fps=").expect("fps in chain");
+        assert!(setpts < fps, "setpts must come first: {chain}");
+
+        clip.speed = 1.0;
+        let still = video_chain(&clip, &project, Profile::Final);
+        assert!(!still.contains("setpts"), "no retime at 1x: {still}");
+        assert!(still.contains("fps=30/1"));
     }
 
     #[test]
