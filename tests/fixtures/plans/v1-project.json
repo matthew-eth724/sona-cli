@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 320,
+    "height": 240,
+    "fps": "25"
+  },
+  "tracks": {
+    "video": [
+      {
+        "id": "clip_1",
+        "source": "/tmp/gate/a.mp4",
+        "src_in": 500000,
+        "speed": 1.0,
+        "transform": "fit",
+        "gain_db": 0.0
+      },
+      {
+        "id": "clip_2",
+        "source": "/tmp/gate/a.mp4",
+        "src_in": 4000000,
+        "src_out": 5500000,
+        "speed": 1.5,
+        "transform": "fit",
+        "gain_db": 0.0,
+        "transition": {
+          "kind": "crossfade",
+          "duration": 300000
+        }
+      }
+    ],
+    "audio": {
+      "source": "/tmp/gate/a.mp4",
+      "gain_db": -6.0,
+      "duck": {
+        "db": -12.0,
+        "ramp": 140000,
+        "spans": [
+          {
+            "start": 420000,
+            "end": 1580000
+          },
+          {
+            "start": 2420000,
+            "end": 3380000
+          }
+        ],
+        "layout": "clip_1:500000:None:1:None|clip_2:4000000:Some(5500000):1.5:Some((\"fade\", 300000))"
+      }
+    },
+    "overlays": [
+      {
+        "kind": "text",
+        "id": "text_1",
+        "content": "t",
+        "at": {
+          "start": 500000,
+          "end": 2000000
+        },
+        "anchor": "bottom",
+        "size": 48,
+        "color": "white"
+      },
+      {
+        "kind": "image",
+        "id": "image_1",
+        "source": "/tmp/gate/logo.png",
+        "at": {
+          "start": 1000000,
+          "end": 3000000
+        },
+        "anchor": "top_left",
+        "width": 0.1875,
+        "opacity": 1.0,
+        "margin": 0.028125
+      }
+    ],
+    "captions": {
+      "source": "/tmp/gate/s.srt",
+      "burn": true
+    },
+    "index": {
+      "audio_hash": "225514bc61b4feaf726dce714ed9131a4f772437be6d06de9c72500f573d4984",
+      "source": "/tmp/gate/a.mp4",
+      "transcript": "/tmp/gate/t.srt",
+      "provider": "srt",
+      "words": 3,
+      "approximate": true
+    }
+  }
+}

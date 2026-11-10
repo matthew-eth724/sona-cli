@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Project {
@@ -25,8 +25,10 @@ pub struct Canvas {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Tracks {
+    /// Unordered; `z` is the stacking order. Version 1 had a flat `video` vec,
+    /// which `upgrade` turns into a single layer `main`.
     #[serde(default)]
-    pub video: Vec<Clip>,
+    pub layers: Vec<Layer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioBed>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -37,6 +39,119 @@ pub struct Tracks {
     /// `.sona/index/<audio_hash>.json`; this is only the pointer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<IndexRef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Layer {
+    pub id: String,
+    /// Stacking order: higher is on top. Unique, so there is one total order and
+    /// no tie-breaking rule to remember.
+    pub z: i32,
+    /// Where this layer's t=0 sits on the program clock.
+    #[serde(default)]
+    pub start: Time,
+    #[serde(default)]
+    pub place: Place,
+    /// The camera inside this layer. Absent means "no move".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<Motion>,
+    /// Sequential inside a layer: version 1's model, unchanged.
+    pub clips: Vec<Clip>,
+}
+
+/// Where a layer's frame lands on the canvas, in canvas fractions.
+/// `Place::CANVAS` is the default and the only legal place at z = 0.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Place {
+    pub x: f32,
+    pub y: f32,
+    pub size: f32,
+}
+
+impl Default for Place {
+    fn default() -> Place {
+        Place::CANVAS
+    }
+}
+
+impl Place {
+    pub const CANVAS: Place = Place {
+        x: 0.0,
+        y: 0.0,
+        size: 1.0,
+    };
+
+    pub fn is_canvas(&self) -> bool {
+        (self.size - 1.0).abs() < f32::EPSILON
+            && self.x.abs() < f32::EPSILON
+            && self.y.abs() < f32::EPSILON
+    }
+
+    /// Top-left and side in pixels, even-rounded for h264.
+    pub fn px(&self, canvas: (u32, u32)) -> (u32, u32, u32) {
+        let side = ((canvas.0 as f32 * self.size).round() as u32 / 2 * 2).max(2);
+        let x = (canvas.0 as f32 * self.x).round().max(0.0) as u32;
+        let y = (canvas.1 as f32 * self.y).round().max(0.0) as u32;
+        (x, y, side)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Point {
+    pub x: f32,
+    pub y: f32,
+}
+
+/// A camera move in layer-local time, linear between keys and held flat outside
+/// them. `zoom` is >= 1.0 (1.0 = the whole layer visible); `at` is the centre of
+/// the view in canvas fractions.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Motion {
+    pub keys: Vec<Key>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Key {
+    pub t: Time,
+    pub zoom: f64,
+    pub at: Point,
+}
+
+impl Motion {
+    /// Piecewise-linear, held at the ends. Pure: same keys, same numbers.
+    pub fn sample(&self, t: Time) -> (f64, Point) {
+        let first = self.keys.first().expect("motion has keys");
+        let last = self.keys.last().expect("motion has keys");
+        if t <= first.t {
+            return (first.zoom, first.at);
+        }
+        if t >= last.t {
+            return (last.zoom, last.at);
+        }
+        for w in self.keys.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if t >= a.t && t <= b.t {
+                let span = (b.t.micros() - a.t.micros()) as f64;
+                let f = if span <= 0.0 {
+                    0.0
+                } else {
+                    (t.micros() - a.t.micros()) as f64 / span
+                };
+                return (
+                    a.zoom + (b.zoom - a.zoom) * f,
+                    Point {
+                        x: a.at.x + (b.at.x - a.at.x) * f as f32,
+                        y: a.at.y + (b.at.y - a.at.y) * f as f32,
+                    },
+                );
+            }
+        }
+        (last.zoom, last.at)
+    }
+
+    pub fn max_zoom(&self) -> f64 {
+        self.keys.iter().map(|k| k.zoom).fold(1.0, f64::max)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,15 +262,22 @@ impl Project {
     /// only valid for the layout they were computed against.
     pub fn layout_token(&self) -> String {
         let mut parts = Vec::new();
-        for c in &self.tracks.video {
+        for layer in self.by_z() {
+            // Layer placement moves what is audible, so it belongs to the layout.
             parts.push(format!(
-                "{}:{}:{:?}:{}:{:?}",
-                c.id,
-                c.src_in.micros(),
-                c.src_out.map(|t| t.micros()),
-                c.speed,
-                c.transition.as_ref().map(|t| (t.kind.xfade(), t.duration.micros()))
+                "L:{}:{}:{:?}:{:?}",
+                layer.id, layer.z, layer.start.micros(), layer.place
             ));
+            for c in &layer.clips {
+                parts.push(format!(
+                    "{}:{}:{:?}:{}:{:?}",
+                    c.id,
+                    c.src_in.micros(),
+                    c.src_out.map(|t| t.micros()),
+                    c.speed,
+                    c.transition.as_ref().map(|t| (t.kind.xfade(), t.duration.micros()))
+                ));
+            }
         }
         parts.join("|")
     }
@@ -294,37 +416,97 @@ impl Project {
         Project {
             version: VERSION,
             canvas: Canvas { width, height, fps },
-            tracks: Tracks::default(),
+            tracks: Tracks {
+                layers: vec![Layer {
+                    id: "main".into(),
+                    z: 0,
+                    start: Time::ZERO,
+                    place: Place::CANVAS,
+                    motion: None,
+                    clips: Vec::new(),
+                }],
+                ..Tracks::default()
+            },
         }
     }
 
-    /// Total program duration: clips in order, each divided by its speed.
-    /// `src_out: None` means "to the end of the source", so this needs media.
+    /// Program duration is the longest layer: layers play at the same time, so
+    /// this is a max, not a sum. One layer reduces to the version-1 formula
+    /// exactly: sum of clips minus the transitions that overlap them.
     pub fn duration(&self, media: &mut MediaIndex) -> Time {
-        let mut total = 0i64;
-        for (i, c) in self.tracks.video.iter().enumerate() {
-            let d = match media.get(Path::new(&c.source)) {
-                Ok(m) => c.out_duration(m.duration),
-                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
-            };
-            total += d.micros();
-            // A transition overlaps its two neighbours, so it shortens the
-            // program by its own duration. The first clip cannot have one.
-            if i > 0 {
-                if let Some(t) = &c.transition {
-                    total -= t.duration.micros();
+        let mut longest = Time::ZERO;
+        for layer in &self.tracks.layers {
+            let mut total = layer.start.micros();
+            for (i, c) in layer.clips.iter().enumerate() {
+                let d = match media.get(Path::new(&c.source)) {
+                    Ok(m) => c.out_duration(m.duration),
+                    Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
+                };
+                total += d.micros();
+                if i > 0 {
+                    if let Some(t) = &c.transition {
+                        total -= t.duration.micros();
+                    }
                 }
             }
+            longest = longest.max(Time::from_micros(total.max(0)));
         }
-        Time::from_micros(total.max(0))
+        longest
+    }
+
+    /// The one sorted view of the layers. Nothing else may sort them.
+    pub fn by_z(&self) -> Vec<&Layer> {
+        let mut v: Vec<&Layer> = self.tracks.layers.iter().collect();
+        v.sort_by_key(|l| l.z);
+        v
+    }
+
+    pub fn layer(&self, id: &str) -> Option<&Layer> {
+        self.tracks.layers.iter().find(|l| l.id == id)
+    }
+
+    pub fn layer_mut(&mut self, id: &str) -> Option<&mut Layer> {
+        self.tracks.layers.iter_mut().find(|l| l.id == id)
+    }
+
+    /// The layer that carries program audio and the default edit target.
+    pub fn main_layer_mut(&mut self) -> Option<&mut Layer> {
+        self.tracks.layers.iter_mut().find(|l| l.z == 0)
+    }
+
+    pub fn main_layer(&self) -> Option<&Layer> {
+        self.tracks.layers.iter().find(|l| l.z == 0)
+    }
+
+    /// Clip ids are unique across the document, so an id is a full handle.
+    pub fn clip(&self, id: &str) -> Option<&Clip> {
+        self.tracks
+            .layers
+            .iter()
+            .flat_map(|l| l.clips.iter())
+            .find(|c| c.id == id)
+    }
+
+    pub fn clip_layer_index(&self, id: &str) -> Option<(usize, usize)> {
+        for (li, l) in self.tracks.layers.iter().enumerate() {
+            if let Some(ci) = l.clips.iter().position(|c| c.id == id) {
+                return Some((li, ci));
+            }
+        }
+        None
+    }
+
+    pub fn clips(&self) -> impl Iterator<Item = &Clip> {
+        self.tracks.layers.iter().flat_map(|l| l.clips.iter())
     }
 
     pub fn next_id(&self, prefix: &str) -> String {
         let mut n = 1;
         loop {
             let candidate = format!("{prefix}_{n}");
-            let taken = self.tracks.video.iter().any(|c| c.id == candidate)
-                || self.tracks.overlays.iter().any(|o| o.id() == candidate);
+            let taken = self.clips().any(|c| c.id == candidate)
+                || self.tracks.overlays.iter().any(|o| o.id() == candidate)
+                || self.tracks.layers.iter().any(|l| l.id == candidate);
             if !taken {
                 return candidate;
             }
@@ -340,21 +522,71 @@ impl Project {
         if self.canvas.width == 0 || self.canvas.height == 0 {
             bail!("canvas has zero size");
         }
-        for (i, c) in self.tracks.video.iter().enumerate() {
-            if c.speed <= 0.0 {
-                bail!("clip {} has speed <= 0", c.id);
+        if self.tracks.layers.is_empty() {
+            bail!("project has no layers");
+        }
+        let mut zs: Vec<i32> = self.tracks.layers.iter().map(|l| l.z).collect();
+        zs.sort();
+        for pair in zs.windows(2) {
+            if pair[0] == pair[1] {
+                bail!("two layers share z = {}; z must be unique", pair[0]);
             }
-            if i == 0 && c.transition.is_some() {
-                bail!("clip {} is first; it has nothing to transition from", c.id);
-            }
-            if let Some(t) = &c.transition {
-                if t.duration.micros() <= 0 {
-                    bail!("clip {} has a zero-length transition", c.id);
+        }
+        match self.main_layer() {
+            None => bail!("no layer at z = 0; that layer carries the program audio"),
+            Some(main) => {
+                if !main.place.is_canvas() {
+                    bail!(
+                        "layer {} is at z = 0 and must fill the canvas (place is {},{},{} wide)",
+                        main.id,
+                        main.place.x,
+                        main.place.y,
+                        main.place.size
+                    );
                 }
             }
-            if let Some(out) = c.src_out {
-                if out < c.src_in {
-                    bail!("clip {} ends before it starts", c.id);
+        }
+        for l in &self.tracks.layers {
+            if l.start.micros() < 0 {
+                bail!("layer {} starts before zero", l.id);
+            }
+            if l.clips.is_empty() {
+                bail!("layer {} has no clips", l.id);
+            }
+            if let Some(m) = &l.motion {
+                if m.keys.is_empty() {
+                    bail!("layer {} has a camera with no keys", l.id);
+                }
+                for w in m.keys.windows(2) {
+                    if w[1].t <= w[0].t {
+                        bail!("layer {} has camera keys out of order", l.id);
+                    }
+                }
+                for k in &m.keys {
+                    if !(k.zoom >= 1.0) {
+                        bail!("layer {} has a key with zoom < 1.0", l.id);
+                    }
+                    if !(0.0..=1.0).contains(&k.at.x) || !(0.0..=1.0).contains(&k.at.y) {
+                        bail!("layer {} has a key with a centre outside the frame", l.id);
+                    }
+                }
+            }
+            for (i, c) in l.clips.iter().enumerate() {
+                if c.speed <= 0.0 {
+                    bail!("clip {} has speed <= 0", c.id);
+                }
+                if i == 0 && c.transition.is_some() {
+                    bail!("clip {} is first in its layer; nothing to transition from", c.id);
+                }
+                if let Some(t) = &c.transition {
+                    if t.duration.micros() <= 0 {
+                        bail!("clip {} has a zero-length transition", c.id);
+                    }
+                }
+                if let Some(out) = c.src_out {
+                    if out < c.src_in {
+                        bail!("clip {} ends before it starts", c.id);
+                    }
                 }
             }
         }
@@ -364,8 +596,9 @@ impl Project {
     /// Warnings that need the sources on disk. Never blocks a render.
     pub fn diagnose(&self, media: &mut MediaIndex) -> Vec<Diagnostic> {
         let mut out = Vec::new();
-        let mut placed = Time::ZERO;
-        for (i, c) in self.tracks.video.iter().enumerate() {
+        for layer in &self.tracks.layers {
+            for (i, c) in layer.clips.iter().enumerate() {
+            let at = format!("tracks.layers[{}].clips[{i}]", layer.id);
             let path = Path::new(&c.source);
             match media.get(path) {
                 Ok(m) => {
@@ -374,7 +607,7 @@ impl Project {
                             out.push(
                                 Diagnostic::new(
                                     "clip_past_media",
-                                    format!("tracks.video[{i}]"),
+                                    at.clone(),
                                     format!(
                                         "{} is {} long but clip {} ends at {}",
                                         c.source, m.duration, c.id, end
@@ -388,7 +621,7 @@ impl Project {
                         out.push(
                             Diagnostic::new(
                                 "clip_has_no_video",
-                                format!("tracks.video[{i}]"),
+                                at.clone(),
                                 format!("{} has no video stream", c.source),
                             )
                             .with_fix(format!("sona rm {}", c.id)),
@@ -398,20 +631,17 @@ impl Project {
                 Err(e) => out.push(
                     Diagnostic::new(
                         "media_missing",
-                        format!("tracks.video[{i}].source"),
+                        format!("{at}.source"),
                         format!("{e}"),
                     )
                     .with_fix(format!("sona rm {}   (or put the file back)", c.id)),
                 ),
             }
-            let span = match media.get(path) {
-                Ok(m) => c.out_duration(m.duration),
-                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
-            };
-            placed = Time::from_micros(placed.micros() + span.micros());
+            }
         }
-        let mut prev_len = Time::ZERO;
-        for (i, c) in self.tracks.video.iter().enumerate() {
+        for layer in &self.tracks.layers {
+            let mut prev_len = Time::ZERO;
+            for (i, c) in layer.clips.iter().enumerate() {
             let len = match media.get(Path::new(&c.source)) {
                 Ok(m) => c.out_duration(m.duration),
                 Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
@@ -422,7 +652,7 @@ impl Project {
                     out.push(
                         Diagnostic::new(
                             "transition_too_long",
-                            format!("tracks.video[{i}].transition"),
+                            format!("tracks.layers[{}].clips[{i}].transition", layer.id),
                             format!(
                                 "{} fades for {} but the shorter neighbour is {}",
                                 c.id, t.duration, shorter
@@ -437,7 +667,9 @@ impl Project {
                 }
             }
             prev_len = len;
+            }
         }
+        let placed = self.duration(media);
         if let Some(bed) = &self.tracks.audio {
             if let Some(duck) = &bed.duck {
                 if !duck.layout.is_empty() && duck.layout != self.layout_token() {
@@ -550,6 +782,54 @@ fn absolute(p: &Path) -> PathBuf {
     }
 }
 
+/// Version 1 kept every clip in one flat list. Kept only to read old documents;
+/// nothing writes it.
+#[derive(Deserialize)]
+struct LegacyV1 {
+    #[allow(dead_code)]
+    version: u32,
+    canvas: Canvas,
+    #[serde(default)]
+    tracks: LegacyTracksV1,
+}
+
+#[derive(Default, Deserialize)]
+struct LegacyTracksV1 {
+    #[serde(default)]
+    video: Vec<Clip>,
+    #[serde(default)]
+    audio: Option<AudioBed>,
+    #[serde(default)]
+    overlays: Vec<Overlay>,
+    #[serde(default)]
+    captions: Option<Captions>,
+    #[serde(default)]
+    index: Option<IndexRef>,
+}
+
+/// Version 1 had one video layer, so the upgrade is not a decision: it is that
+/// layer, named `main`, at z = 0, filling the canvas, with no camera.
+fn upgrade_v1(old: LegacyV1) -> Project {
+    Project {
+        version: VERSION,
+        canvas: old.canvas,
+        tracks: Tracks {
+            layers: vec![Layer {
+                id: "main".into(),
+                z: 0,
+                start: Time::ZERO,
+                place: Place::CANVAS,
+                motion: None,
+                clips: old.tracks.video,
+            }],
+            audio: old.tracks.audio,
+            overlays: old.tracks.overlays,
+            captions: old.tracks.captions,
+            index: old.tracks.index,
+        },
+    }
+}
+
 /// Owns `sona.json`. Every command opens, mutates, saves through this.
 pub struct Store {
     pub path: PathBuf,
@@ -573,8 +853,20 @@ impl Store {
     pub fn open(path: &Path) -> Result<Store> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("no project at {} (run `sona init`)", path.display()))?;
-        let project: Project = serde_json::from_str(&raw)
-            .with_context(|| format!("{} is not a valid project", path.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&raw)
+            .with_context(|| format!("{} is not valid JSON", path.display()))?;
+        let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+        let project: Project = match version {
+            1 => upgrade_v1(
+                serde_json::from_value(value)
+                    .with_context(|| format!("{} is not a valid version-1 project", path.display()))?,
+            ),
+            VERSION => serde_json::from_value(value)
+                .with_context(|| format!("{} is not a valid project", path.display()))?,
+            other => bail!(
+                "unsupported project version {other} (this build reads 1 and {VERSION})"
+            ),
+        };
         project.validate()?;
         Ok(Store {
             path: absolute(path),
@@ -616,9 +908,37 @@ mod tests {
     use crate::media::MediaIndex;
 
     #[test]
+    fn a_version_1_document_upgrades_to_one_main_layer() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/plans/v1-project.json");
+        let dir = std::env::temp_dir().join(format!("sona-up-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sona.json");
+        std::fs::copy(&fixture, &path).unwrap();
+
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.project.version, 2);
+        let layers = &store.project.tracks.layers;
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].id, "main");
+        assert_eq!(layers[0].z, 0);
+        assert_eq!(layers[0].clips.len(), 2);
+        assert!(layers[0].place.is_canvas());
+        assert!(layers[0].motion.is_none());
+        // everything else survives the upgrade untouched
+        assert!(store.project.tracks.audio.is_some());
+        assert_eq!(store.project.tracks.overlays.len(), 2);
+        assert!(store.project.tracks.captions.is_some());
+        assert!(store.project.tracks.index.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn missing_media_names_the_command_that_fixes_it() {
         let mut p = Project::new(640, 360, Rational::new(30, 1));
-        p.tracks.video.push(Clip {
+        p.main_layer_mut().unwrap().clips.push(Clip {
             id: "clip_1".into(),
             source: "/nope/gone.mp4".into(),
             src_in: Time::ZERO,
@@ -642,7 +962,7 @@ mod tests {
         let mut p = Project::new(640, 360, Rational::new(30, 1));
         // A 9s clip, with src_out known, so the timeline has a length even
         // though the file does not exist.
-        p.tracks.video.push(Clip {
+        p.main_layer_mut().unwrap().clips.push(Clip {
             id: "clip_1".into(),
             source: "/nope/gone.mp4".into(),
             src_in: Time::ZERO,
@@ -680,9 +1000,107 @@ mod tests {
     }
 
     #[test]
+    fn program_duration_is_the_longest_layer_not_the_sum() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.main_layer_mut().unwrap().clips = vec![clip_with("clip_1", 3.0, None)];
+        p.tracks.layers.push(Layer {
+            id: "pip".into(),
+            z: 5,
+            start: Time::from_secs_f64(1.0),
+            place: Place { x: 0.6, y: 0.6, size: 0.3 },
+            motion: None,
+            clips: vec![clip_with("clip_9", 2.0, None)],
+        });
+        let mut media = MediaIndex::default();
+        // main is 3s; pip starts at 1s and runs 2s -> ends at 3s. max = 3s.
+        assert_eq!(p.duration(&mut media).micros(), 3_000_000);
+        p.tracks.layers[1].clips[0].src_out = Some(Time::from_secs_f64(5.0));
+        // pip now ends at 6s, so the program is 6s even though main is 3s.
+        assert_eq!(p.duration(&mut media).micros(), 6_000_000);
+    }
+
+    #[test]
+    fn z_order_comes_from_one_accessor() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.layers.push(Layer {
+            id: "above".into(),
+            z: 10,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            clips: vec![clip_with("clip_9", 1.0, None)],
+        });
+        p.tracks.layers.push(Layer {
+            id: "below".into(),
+            z: -5,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            clips: vec![clip_with("clip_8", 1.0, None)],
+        });
+        let order: Vec<&str> = p.by_z().iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(order, ["below", "main", "above"]);
+    }
+
+    #[test]
+    fn layer_rules_are_rejected() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.main_layer_mut().unwrap().clips = vec![clip_with("clip_1", 3.0, None)];
+        // duplicate z
+        let mut dup = p.clone();
+        dup.tracks.layers.push(Layer {
+            id: "x".into(),
+            z: 0,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            clips: vec![clip_with("clip_2", 1.0, None)],
+        });
+        assert!(dup.validate().unwrap_err().to_string().contains("share z"));
+
+        // a main layer that does not fill the canvas
+        let mut hole = p.clone();
+        hole.main_layer_mut().unwrap().place = Place { x: 0.1, y: 0.1, size: 0.5 };
+        assert!(hole.validate().unwrap_err().to_string().contains("must fill the canvas"));
+
+        // camera keys out of order, and a zoom below 1
+        let mut motion = p.clone();
+        motion.tracks.layers[0].motion = Some(Motion {
+            keys: vec![
+                Key { t: Time::from_secs_f64(2.0), zoom: 1.2, at: Point { x: 0.5, y: 0.5 } },
+                Key { t: Time::from_secs_f64(1.0), zoom: 0.5, at: Point { x: 0.5, y: 0.5 } },
+            ],
+        });
+        assert!(motion.validate().is_err());
+    }
+
+    #[test]
+    fn camera_sampling_is_linear_and_held_at_the_ends() {
+        let m = Motion {
+            keys: vec![
+                Key { t: Time::from_secs_f64(0.0), zoom: 1.0, at: Point { x: 0.5, y: 0.5 } },
+                Key { t: Time::from_secs_f64(4.0), zoom: 2.0, at: Point { x: 0.5, y: 0.1 } },
+            ],
+        };
+        assert_eq!(m.sample(Time::from_secs_f64(-1.0)).0, 1.0);
+        let (z, at) = m.sample(Time::from_secs_f64(2.0));
+        assert!((z - 1.5).abs() < 1e-9);
+        assert!((at.y - 0.3).abs() < 1e-6);
+        assert_eq!(m.sample(Time::from_secs_f64(9.0)).0, 2.0);
+        assert_eq!(m.max_zoom(), 2.0);
+    }
+
+    #[test]
+    fn place_pixels_are_even_and_inside_the_canvas() {
+        let (x, y, side) = Place { x: 0.5, y: 0.25, size: 0.333 }.px((1920, 1080));
+        assert_eq!(side % 2, 0);
+        assert_eq!((x, y), (960, 270));
+    }
+
+    #[test]
     fn transitions_shorten_the_program() {
         let mut p = Project::new(640, 360, Rational::new(30, 1));
-        p.tracks.video = vec![
+        p.main_layer_mut().unwrap().clips = vec![
             clip_with("clip_1", 3.0, None),
             clip_with(
                 "clip_2",
@@ -701,7 +1119,7 @@ mod tests {
     #[test]
     fn a_transition_on_the_first_clip_is_rejected() {
         let mut p = Project::new(640, 360, Rational::new(30, 1));
-        p.tracks.video = vec![clip_with(
+        p.main_layer_mut().unwrap().clips = vec![clip_with(
             "clip_1",
             3.0,
             Some(Transition {
@@ -716,7 +1134,7 @@ mod tests {
     #[test]
     fn a_transition_longer_than_its_neighbour_warns_with_a_fix() {
         let mut p = Project::new(640, 360, Rational::new(30, 1));
-        p.tracks.video = vec![
+        p.main_layer_mut().unwrap().clips = vec![
             clip_with("clip_1", 1.0, None),
             clip_with(
                 "clip_2",
@@ -750,7 +1168,7 @@ mod tests {
             let _ = w;
         }
         let mut p = Project::new(640, 360, Rational::new(30, 1));
-        p.tracks.video.push(Clip {
+        p.main_layer_mut().unwrap().clips.push(Clip {
             id: "clip_1".into(),
             source: "/nope/gone.mp4".into(),
             src_in: Time::ZERO,

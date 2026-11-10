@@ -9,18 +9,26 @@ a hand edit is legal — it just has to survive the rules below.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "canvas": { "width": 1080, "height": 1920, "fps": "30" },
   "tracks": {
-    "video": [
+    "layers": [
       {
-        "id": "clip_1",
-        "source": "/media/intro.mp4",
-        "src_in": 1000000,
-        "src_out": 6000000,
-        "speed": 1.0,
-        "transform": "fit",
-        "gain_db": 0.0
+        "id": "main",
+        "z": 0,
+        "start": 0,
+        "place": { "x": 0.0, "y": 0.0, "size": 1.0 },
+        "clips": [
+          {
+            "id": "clip_1",
+            "source": "/media/intro.mp4",
+            "src_in": 1000000,
+            "src_out": 6000000,
+            "speed": 1.0,
+            "transform": "fit",
+            "gain_db": 0.0
+          }
+        ]
       }
     ],
     "audio": { "source": "/media/music.mp3", "gain_db": -14.0 },
@@ -59,10 +67,40 @@ CLI always writes integers.
 Changing the canvas invalidates every clip, because each normalized segment
 carries the size and rate.
 
-## tracks.video
+## version
 
-An ordered array. **The order of the array is the timeline order** — there is no
-separate sequence or timeline object to keep in sync.
+`2` is current. A version-1 document (one flat `tracks.video` array) is upgraded
+in memory on open and written back as version 2 on the next save. Nothing is lost
+in the upgrade: v1 was always exactly one layer, named `main`, at `z: 0`, filling
+the canvas, with no camera.
+
+## tracks.layers
+
+An unordered array; **`z` is the stacking order** and it is unique, so there is
+one total order and no tie-breaking rule. Version 1's `tracks.video` is now
+`layers[0].clips`.
+
+| field | type | default | notes |
+| --- | --- | --- | --- |
+| `id` | string | required | `main` for the layer carried over from v1 |
+| `z` | i32 | required | higher is on top; `z: 0` is the program layer and carries audio |
+| `start` | time | `0` | where this layer's t=0 sits on the program clock |
+| `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions |
+| `motion` | object | omitted | the camera: `keys: [{t, zoom, at}]`, linear between keys |
+| `clips` | array | required | sequential inside the layer: version 1's model, unchanged |
+
+The layer at `z: 0` must fill the canvas (`place` of `{0,0,1}`): a base layer with
+a hole is a bug, not a look.
+
+**Multi-layer projects and `motion` do not render yet.** They validate and save,
+and `sona render` refuses with `composite_not_built` rather than producing a
+render that silently ignores the extra layers. The design is
+[design-compositing.md](design-compositing.md).
+
+## layers[].clips
+
+An ordered array. **The order of the array is the timeline order inside that
+layer** — there is no separate sequence or timeline object to keep in sync.
 
 | field | type | default | notes |
 | --- | --- | --- | --- |
@@ -74,8 +112,10 @@ separate sequence or timeline object to keep in sync.
 | `transform` | `fit` \| `fill` | `fit` | pad or crop to the canvas |
 | `gain_db` | f32 | `0.0` | per-clip audio gain |
 
-A clip's contribution to the timeline is
-`(min(src_out, media_duration) - src_in) / speed`.
+A clip's contribution to its layer is
+`(min(src_out, media_duration) - src_in) / speed`. Program duration is
+**the longest layer** — `max over layers (start + layer duration)`, where a
+layer's duration is its clips minus the transitions that overlap them.
 
 ## clip.transition
 

@@ -28,6 +28,17 @@ $SONA inspect | jq '.warnings'
 
 ## Gotchas
 
+- Documents are **version 2**: `tracks.layers[].clips`, with `z`, `start`,
+  `place` and `motion` per layer. A version-1 document upgrades in memory on open
+  and is written back as v2 on the next save, so an old project still renders —
+  proven by byte-identical plans captured before the change
+  (`tests/fixtures/plans/`).
+- A project with more than one layer, or a layer with camera keys, refuses to
+  render with `composite_not_built`. It validates and saves; it does not render
+  by ignoring the extras.
+- `sona list` shows the `main` layer. Clip ids are unique across the document, so
+  `trim`/`speed`/`move`/`rm` need no layer flag.
+
 - Every mutating command returns the `warnings[]` it just created, so a trim
   past the end of a source is visible immediately, not on the next `inspect`.
 - `--to` past the media duration is **clamped** to the media, and reported as

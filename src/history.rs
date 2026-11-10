@@ -25,7 +25,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn clips(&self) -> usize {
-        self.project.tracks.video.len()
+        self.project.clips().count()
     }
 
     pub fn overlays(&self) -> usize {

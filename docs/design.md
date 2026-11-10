@@ -627,7 +627,12 @@ Added after the first build, for the clipping workflow:
   same 30-second range, which is the whole point of the exception.
 
 Designed, not built: multi-track compositing and keyframes, in
-[design-compositing.md](design-compositing.md). It bumps the document to version 2
+[design-compositing.md](design-compositing.md). The **document half has landed**:
+version 2 with layers, placement and camera keys, a v1 upgrade on open, duration
+as a max over layers, and `composite_not_built` for anything the compositor would
+have to handle. The gate held — three captured v1 plans (final, preview,
+loudnorm) are byte-identical after the change, checked by building the
+pre-change binary from git and driving both against one project. It bumps the document to version 2
 (layers, placement, camera keyframes), and the design's first gate is that a v1
 project must plan byte-identically before any compositor code lands.
 

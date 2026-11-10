@@ -269,8 +269,21 @@ pub fn plan(
     loudness: Option<Loudness>,
 ) -> Result<RenderPlan> {
     let project = &store.project;
-    if project.tracks.video.is_empty() {
-        bail!("project has no clips (run `sona add <file>`)");
+    // One layer until the compositor lands; anything else is a clear refusal
+    // rather than a render that silently ignores layers.
+    if project.tracks.layers.len() > 1 {
+        bail!(
+            "composite_not_built: this project has {} layers, but compositing is designed and not implemented (docs/design-compositing.md)",
+            project.tracks.layers.len()
+        );
+    }
+    let layer = project
+        .main_layer()
+        .filter(|l| !l.clips.is_empty())
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("project has no clips (run `sona add <file>`)"))?;
+    if layer.motion.is_some() {
+        bail!("composite_not_built: camera keyframes are designed and not implemented (docs/design-compositing.md)");
     }
     let mut warnings = Vec::new();
     let mut steps = Vec::new();
@@ -280,7 +293,7 @@ pub fn plan(
 
     // Stage 1: one normalized segment per clip.
     let mut segments: Vec<Segment> = Vec::new();
-    for clip in &project.tracks.video {
+    for clip in &layer.clips {
         let src = store.resolve(&clip.source);
         let m = media.get(&src)?.clone();
         let span = clip.source_span(m.duration);

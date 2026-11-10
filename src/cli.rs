@@ -356,8 +356,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                     bail!("--to must be after --from");
                 }
             }
-            let insert_at = at.unwrap_or(store.project.tracks.video.len());
-            if insert_at > store.project.tracks.video.len() {
+            let main_len = store
+                .project
+                .main_layer()
+                .map(|l| l.clips.len())
+                .unwrap_or(0);
+            let insert_at = at.unwrap_or(main_len);
+            if insert_at > main_len {
                 bail!("--at {insert_at} is past the end of the timeline");
             }
             let mut added = Vec::new();
@@ -395,7 +400,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                     gain_db: 0.0,
                 };
                 let dur = clip.out_duration(m.duration);
-                store.project.tracks.video.insert(insert_at + offset, clip);
+                if let Some(layer) = store.project.main_layer_mut() {
+                    layer.clips.insert(insert_at + offset, clip);
+                }
                 added.push(json!({
                     "id": id,
                     "source": abs.display().to_string(),
@@ -410,8 +417,9 @@ fn dispatch(cli: Cli) -> Result<()> {
             let duration = store.project.duration(&mut media);
             let clips: Vec<_> = store
                 .project
-                .tracks
-                .video
+                .main_layer()
+                .map(|l| l.clips.as_slice())
+                .unwrap_or(&[])
                 .iter()
                 .enumerate()
                 .map(|(i, c)| {
@@ -450,10 +458,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     let clip_src = store.resolve(
                         &store
                             .project
-                            .tracks
-                            .video
-                            .iter()
-                            .find(|c| c.id == id)
+                            .clip(&id)
                             .with_context(|| format!("usage: no clip {id}"))?
                             .source,
                     );
@@ -469,13 +474,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
                 None => None,
             };
-            let clip = store
+            let (li, ci) = store
                 .project
-                .tracks
-                .video
-                .iter_mut()
-                .find(|c| c.id == id)
+                .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
+            let clip = &mut store.project.tracks.layers[li].clips[ci];
             if let Some((ws, we)) = word_span {
                 clip.src_in = ws;
                 clip.src_out = Some(we);
@@ -502,14 +505,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::history::record(&store, "speed")?;
             }
             let mut media = MediaIndex::default();
-            let clip = store
+            let (li, ci) = store
                 .project
-                .tracks
-                .video
-                .iter_mut()
-                .find(|c| c.id == id)
+                .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
-            clip.speed = speed;
+            store.project.tracks.layers[li].clips[ci].speed = speed;
             finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
         Cmd::Move { id, to, dry_run } => {
@@ -518,16 +518,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::history::record(&store, "move")?;
             }
             let mut media = MediaIndex::default();
-            let pos = store
+            let (li, pos) = store
                 .project
-                .tracks
-                .video
-                .iter()
-                .position(|c| c.id == id)
+                .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
-            let clip = store.project.tracks.video.remove(pos);
-            let target = to.min(store.project.tracks.video.len());
-            store.project.tracks.video.insert(target, clip);
+            let layer = &mut store.project.tracks.layers[li];
+            let clip = layer.clips.remove(pos);
+            let target = to.min(layer.clips.len());
+            layer.clips.insert(target, clip);
             finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 2}))
         }
         Cmd::Rm { id, dry_run } => {
@@ -538,8 +536,12 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut media = MediaIndex::default();
             // One verb for everything removable, so a diagnostic can name a
             // command that exists instead of inventing one.
-            if let Some(pos) = store.project.tracks.video.iter().position(|c| c.id == id) {
-                store.project.tracks.video.remove(pos);
+            if let Some((li, ci)) = store.project.clip_layer_index(&id) {
+                let layer = &mut store.project.tracks.layers[li];
+                layer.clips.remove(ci);
+                if layer.clips.is_empty() && layer.z != 0 {
+                    store.project.tracks.layers.remove(li);
+                }
                 finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
             } else if let Some(pos) = store
                 .project
@@ -665,12 +667,14 @@ fn dispatch(cli: Cli) -> Result<()> {
                 // times from a different file mean nothing on this timeline.
                 let mut clips = Vec::new();
                 let mut durations = Vec::new();
-                for c in &store.project.tracks.video {
+                for c in store.project.clips() {
                     let src = store.resolve(&c.source);
                     if !same_file(&idx_src, &src) {
                         bail!(
-                            "usage: the index describes {}, which no clip uses; index the clip's own file",
-                            idx_src.display()
+                            "usage: the index describes {}, but clip {} is cut from {}; index that file, or duck only the clips from this one",
+                            idx_src.display(),
+                            c.id,
+                            src.display()
                         );
                     }
                     let m = media.get(&src)?;
@@ -730,15 +734,12 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::history::record(&store, "transition")?;
             }
             let mut media = MediaIndex::default();
-            let pos = store
+            let (li, pos) = store
                 .project
-                .tracks
-                .video
-                .iter()
-                .position(|c| c.id == id)
+                .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
             if pos == 0 {
-                bail!("usage: {id} is the first clip; it has nothing to transition from");
+                bail!("usage: {id} is the first clip in its layer; nothing to transition from");
             }
             let kind = if none {
                 None
@@ -750,11 +751,9 @@ fn dispatch(cli: Cli) -> Result<()> {
             };
             let dur = Time::parse(&duration)?;
             // Longer than its neighbour and the graph can't be built honestly.
-            let prev = store.project.tracks.video[pos - 1].id.clone();
-            let shorter = store
-                .project
-                .tracks
-                .video
+            let prev = store.project.tracks.layers[li].clips[pos - 1].id.clone();
+            let shorter = store.project.tracks.layers[li]
+                .clips
                 .iter()
                 .filter(|c| c.id == id || c.id == prev)
                 .filter_map(|c| {
@@ -772,7 +771,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     );
                 }
             }
-            store.project.tracks.video[pos].transition = kind.map(|k| crate::project::Transition {
+            store.project.tracks.layers[li].clips[pos].transition = kind.map(|k| crate::project::Transition {
                 kind: k,
                 duration: dur,
             });
@@ -842,14 +841,11 @@ fn dispatch(cli: Cli) -> Result<()> {
 
             let idx = project_index(&store)?;
             let idx_src = idx_source(&store);
-            let pos = store
+            let (li, pos) = store
                 .project
-                .tracks
-                .video
-                .iter()
-                .position(|c| c.id == id)
+                .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
-            let base = store.project.tracks.video[pos].clone();
+            let base = store.project.tracks.layers[li].clips[pos].clone();
             let clip_src = store.resolve(&base.source);
             if !same_file(&idx_src, &clip_src) {
                 bail!(
@@ -926,7 +922,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
 
             crate::history::record(&store, "cut")?;
-            store.project.tracks.video.remove(pos);
+            store.project.tracks.layers[li].clips.remove(pos);
             let mut new_ids = Vec::new();
             for (k, span) in cut.kept.iter().enumerate() {
                 let new_id = store.project.next_id("clip");
@@ -934,7 +930,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 clip.id = new_id.clone();
                 clip.src_in = span.start;
                 clip.src_out = Some(span.end);
-                store.project.tracks.video.insert(pos + k, clip);
+                store.project.tracks.layers[li].clips.insert(pos + k, clip);
                 new_ids.push(new_id);
             }
 
@@ -1026,7 +1022,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 None => {
                     // Default to the project's source, so a re-index after
                     // changing the transcript does not need --audio again.
-                    if let Some(first) = store.project.tracks.video.first() {
+                    if let Some(first) = store.project.main_layer().and_then(|l| l.clips.first()) {
                         store.resolve(&first.source)
                     } else if let Some(existing) = &store.project.tracks.index {
                         PathBuf::from(&existing.source)
@@ -1182,9 +1178,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let diags = store.project.diagnose(&mut media);
             let clips = store
                 .project
-                .tracks
-                .video
-                .iter()
+                .clips()
                 .map(|c| {
                     json!({
                         "id": c.id,

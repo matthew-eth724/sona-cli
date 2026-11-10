@@ -555,6 +555,22 @@ never overwrite the other.
 Stills are never upscaled: a proxy still comes out at proxy size, which is both
 honest and cheaper to read.
 
+## layers and cameras
+
+The document (version 2) already models layers and camera keys, and `sona` will
+refuse to render one rather than ignore it:
+
+```console
+$ sona render
+{"error":{"code":"composite_not_built",
+ "message":"this project has 2 layers, but compositing is designed and not implemented"}}
+```
+
+Editing commands still target the `main` layer, and clip ids are unique across the
+document, so `trim`, `speed`, `move`, `rm` and `transition` need no layer flag.
+The design, including the commands that will exist, is
+[design-compositing.md](design-compositing.md).
+
 ## history
 
 ```
