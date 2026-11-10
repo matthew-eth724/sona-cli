@@ -1,7 +1,11 @@
 name: publish to npm
 
 # One job per platform on a native runner: cross-compiling a CLI that shells out
-# to ffmpeg is not worth the surprises. Each job stages its package, then the
+# to ffmpeg is not worth the surprises.
+#
+# Runner labels verified against actions/runner-images: macos-13 is retired and
+# macos-14 is deprecated, so the Mac legs are macos-15 (arm64) and macos-15-intel
+# (x64). windows-latest migrates over months; windows-2025 is pinned instead. Each job stages its package, then the
 # launcher publishes last so a partial release never leaves a launcher pointing
 # at a package that does not exist.
 on:
@@ -27,13 +31,13 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             key: linux-arm64
-          - os: macos-13
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             key: darwin-x64
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             key: darwin-arm64
-          - os: windows-latest
+          - os: windows-2025
             target: x86_64-pc-windows-msvc
             key: win32-x64
     steps:
