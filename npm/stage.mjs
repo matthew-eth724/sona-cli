@@ -6,7 +6,8 @@
 // Produces npm/out/<pkg-name>/ ready for `npm publish`. The launcher package is
 // copied from npm/launcher/ with the same version.
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const TARGETS = {
   // Linux binaries must be built for *-unknown-linux-musl: static-pie means one
@@ -32,7 +33,9 @@ if (!key || !binary || !TARGETS[key]) {
 }
 
 const t = TARGETS[key];
-const root = new URL("..", import.meta.url).pathname;
+// URL.pathname gives "/D:/a/..." on Windows, and joining that onto "D:\a\..."
+// produced "D:\D:\a\..." — which is how the first Windows release failed.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const version = JSON.parse(readFileSync(join(root, "npm/launcher/package.json"), "utf8")).version;
 const out = join(root, "npm/out", t.pkg);
 

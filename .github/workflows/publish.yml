@@ -69,9 +69,27 @@ jobs:
           "$bin" --version
       - name: publish the platform package
         shell: bash
-        # No continue-on-error: a missing platform package would leave the
-        # launcher pointing at nothing, so a partial release must fail loudly.
-        run: npm publish $(ls -d npm/out/*/) --access public --provenance
+        # A release gets retried after a partial failure, and npm refuses to
+        # overwrite a version. So: try to publish, and treat "already exists" as
+        # success. Anything else fails loudly, because a missing platform package
+        # would leave the launcher pointing at nothing.
+        run: |
+          set -euo pipefail
+          dir=$(ls -d npm/out/*/ | head -1)
+          name=$(node -p "require('./${dir}package.json').name")
+          version=$(node -p "require('./${dir}package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already published; nothing to do"
+            exit 0
+          fi
+          if npm publish "$dir" --access public --provenance; then
+            echo "published $name@$version"
+          elif npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version appeared while publishing; treating as done"
+          else
+            echo "failed to publish $name@$version" >&2
+            exit 1
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: actions/upload-artifact@v4
@@ -93,7 +111,23 @@ jobs:
           tag="${GITHUB_REF_NAME#v}"
           have=$(node -p "require('./npm/launcher/package.json').version")
           [ "$tag" = "$have" ] || { echo "tag $tag != package $have"; exit 1; }
-      - run: npm publish --access public --provenance
+      - name: publish the launcher
         working-directory: npm/launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already published; nothing to do"
+            exit 0
+          fi
+          if npm publish --access public --provenance; then
+            echo "published $name@$version"
+          elif npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version appeared while publishing; treating as done"
+          else
+            exit 1
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
