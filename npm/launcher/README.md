@@ -3,10 +3,10 @@
 A video editing CLI for AI agents. One JSON document in, ffmpeg out.
 
 ```console
-$ npx @matthew-eth724/splice-cli init --size 1080x1920 --fps 30
-$ npx @matthew-eth724/splice-cli add intro.mp4
-$ npx @matthew-eth724/splice-cli text "Ship faster" --from 0.5 --to 4
-$ npx @matthew-eth724/splice-cli render -o out.mp4
+$ npx splice-cli init --size 1080x1920 --fps 30
+$ npx splice-cli add intro.mp4
+$ npx splice-cli text "Ship faster" --from 0.5 --to 4
+$ npx splice-cli render -o out.mp4
 ```
 
 **ffmpeg is required.** `splice` shells out to `ffmpeg`, `ffprobe` and `fc-match`
