@@ -368,8 +368,13 @@ Stills are scaled to 768 px wide for vision-model token cost.
 ```
 
 Reads from the last cached render step, so a render must run first — the final
-one by default, or the preview one with `--preview`. The two caches are
-separate, so `frames` without the flag cannot see a preview-only render.
+one by default, or the preview one with `--preview`. The two caches are separate,
+so `frames` without the flag cannot see a preview-only render, and each writes to
+its own directory (`.sona/preview` vs `.sona/preview-proxy`) so the stills of one
+never overwrite the other.
+
+Stills are never upscaled: a proxy still comes out at proxy size, which is both
+honest and cheaper to read.
 
 ## history
 

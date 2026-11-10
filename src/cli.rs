@@ -149,8 +149,8 @@ enum Cmd {
         at: Option<String>,
         #[arg(long)]
         sheet: Option<u32>,
-        #[arg(short = 'o', long, default_value = ".sona/preview")]
-        out: PathBuf,
+        #[arg(short = 'o', long)]
+        out: Option<PathBuf>,
         /// Read stills from the preview render instead of the final one.
         #[arg(long)]
         preview: bool,
@@ -814,7 +814,19 @@ fn dispatch(cli: Cli) -> Result<()> {
                     if preview { " --preview" } else { "" }
                 );
             }
-            let out_dir = store.resolve(&out.to_string_lossy());
+            // Separate directories, because a proxy still and a final still of
+            // the same timestamp would otherwise overwrite each other.
+            let out_dir = store.resolve(
+                &out
+                    .unwrap_or_else(|| {
+                        PathBuf::from(if preview {
+                            ".sona/preview-proxy"
+                        } else {
+                            ".sona/preview"
+                        })
+                    })
+                    .to_string_lossy(),
+            );
             let duration = plan.duration;
             let mut produced = Vec::new();
             if let Some(at) = at {

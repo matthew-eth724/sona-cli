@@ -19,8 +19,10 @@ pub fn stills(source: &Path, times: &[Time], out_dir: &Path) -> Result<Vec<PathB
         inv.push("-ss").push(format!("{:.3}", t.secs_f64()));
         inv.input(source);
         inv.push("-frames:v").push("1");
+        // Never upscale: a proxy still read at proxy size is both honest and
+        // cheaper in vision tokens than a blurry 768px blow-up of it.
         inv.push("-vf")
-            .push(format!("scale={REVIEW_WIDTH}:-2:force_original_aspect_ratio=decrease"));
+            .push(format!(r"scale='min({REVIEW_WIDTH}\,iw)':-2"));
         inv.push(arg(&path));
         crate::ffmpeg::run(&inv, std::time::Duration::from_secs(120))
             .with_context(|| format!("frame at {t}"))?;
