@@ -20,6 +20,7 @@ $ sona doctor
 | `ffmpeg_failed` | 4 | one render step failed | `sona plan`, find that step, read its argv |
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `sona <cmd> --help` |
 | `usage: no clip` | 5 | the id is not in the timeline | `sona list` |
+| `no_history` | 2 | nothing left to undo, or `.sona/history/` was deleted | `sona history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.sona/index/` was deleted | `sona index --from <transcript>` |
 | `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
 
@@ -69,6 +70,14 @@ and `--keep` is large enough to leave nothing. Lower `--keep`, then re-run.
 **Captions or overlays are now out of sync.** `cut` removes time, so anything
 timed against the old timeline moved. `cut_shifts_layers` warned about it. Recut
 captions after the edit, not before.
+
+**`frames` says nothing rendered, but you rendered.** Preview and final keep
+separate caches. `sona frames --preview` reads the proxy; without the flag it
+wants the final render. Run the matching `render` first.
+
+**The project is unreadable and nothing opens.** `sona undo`. It restores the
+last snapshot without parsing the broken file. If that fails, the previous
+document is still at `.sona/history/<seq>.json` under the `project` key.
 
 **`find` returns nothing but you can see the words.** Matching ignores case and
 punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and

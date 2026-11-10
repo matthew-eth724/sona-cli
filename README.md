@@ -13,6 +13,7 @@ $ sona add podcast.mp4 --words w118-w126
 $ sona cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
 $ sona text "Ship faster" --from 0.5 --to 4 --pos bottom
 $ sona caption subs.srt
+$ sona render --preview                # cheap proxy, own cache
 $ sona render -o out.mp4
 {"duration":"00:00:42.500","ok":true,"out":"out.mp4","steps":{"ran":4,"reused":0,"total":4}}
 ```
@@ -41,6 +42,12 @@ So `sona` is a compiler, not a flag translator:
   seconds without reading vendor docs.
 - **`sona frames` gives the agent eyes** — stills and contact sheets sized for a
   vision model.
+- **`sona render --preview` makes looking cheap.** A 480x854 proxy with its own
+  cache keys: 1.6 s against 7.1 s for the same 20-second clip, and switching
+  back to final costs nothing.
+- **`sona undo` exists because agents make mistakes.** Every mutation snapshots
+  `sona.json` first, and undo restores it without parsing the file, so a
+  corrupted project is one command from fixed.
 - **`sona view` and `sona find` make reading cheap.** An indexed transcript
   prints as a handful of text lines with stable word ids (`w1`, `w2`, …), so
   finding a cut point costs a few hundred bytes instead of a timeline walk.
@@ -71,6 +78,7 @@ filters exist, which font `drawtext` will use, and whether ASR keys are visible.
 | reading | `index` `view` `find` |
 | tighten | `cut` |
 | output | `plan` `render` `frames` |
+| safety | `history` `undo` |
 
 Full reference: [docs/cli.md](docs/cli.md).
 

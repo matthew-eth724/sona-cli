@@ -2,6 +2,9 @@
 
 ## Sub-features
 
+- `render --preview` — a proxy render (480x854, 15 fps, crf 30) with its own cache
+  keys; `plan --preview` shows that argv, `frames --preview` reads its output.
+
 - `plan` — the exact ffmpeg argv per step, with `cached`.
 - `render -o out.mp4` — executes the plan into `.sona/cache/`, then copies the
   final step to `out.mp4`.
@@ -31,6 +34,10 @@ $SONA render -o out.mp4 | jq '.steps'      # {"ran":3,"reused":1,...}
 ```
 
 ## Gotchas
+
+- Preview and final share no cache entries. `reused: 0` after a final render
+  following a preview is correct, not a bug.
+- `frames` reads final by default; pass `--preview` to read the proxy.
 
 - **`ran: 0` after an edit is a cache-key bug**, not a fast render. The step key
   must include its own argv; the decorate step once keyed only on its inputs and

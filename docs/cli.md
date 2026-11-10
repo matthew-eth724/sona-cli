@@ -308,11 +308,12 @@ before a render to learn what is wrong without spawning ffmpeg.
 ## plan
 
 ```
-sona plan
+sona plan [--preview]
 ```
 
-The exact argv per step, whether each is already cached, and the output path.
-Runs no ffmpeg.
+The exact argv per step, whether each is already cached, the profile, and the
+output path. Runs no ffmpeg (`ffmpeg -version`/`-filters`/`-encoders` are probed
+for capability and keying).
 
 ```json
 {"ok": true, "out": "out.mp4", "steps": [
@@ -325,7 +326,7 @@ This is the debugging lever: if the render is wrong, the argv says why.
 ## render
 
 ```
-sona render [-o out.mp4] [--timeout 3600]
+sona render [-o out.mp4] [--preview] [--timeout 3600]
 ```
 
 Executes the plan into `.sona/cache/`, then copies the final step to `-o`.
@@ -338,10 +339,24 @@ Executes the plan into `.sona/cache/`, then copies the final step to `-o`.
 `ran`/`reused` are the cache contract: an unchanged re-render reports
 `reused == total`; a one-overlay edit reports `ran: 1`.
 
+`--preview` renders a proxy: the canvas fitted into 480x854, 15 fps, crf 30,
+ultrafast, 64k audio, written to `preview.mp4` by default. It is a **different
+plan**, not a quality knob — every step key includes the profile, so preview and
+final caches coexist and neither invalidates the other.
+
+```console
+$ sona render --preview
+{"ok": true, "profile": "preview", "size": "480x852", "fps": "15",
+ "out": "preview.mp4", "steps": {"total": 2, "ran": 2, "reused": 0}}
+```
+
+On a 20-second 1080x1920 clip: 1.6 s preview against 7.1 s final, same 4 vCPUs.
+Iterate on the preview, ship the final.
+
 ## frames
 
 ```
-sona frames [--at <t,t,...>] [--sheet <n>] [-o .sona/preview]
+sona frames [--at <t,t,...>] [--sheet <n>] [-o .sona/preview] [--preview]
 ```
 
 Writes PNG stills and/or a tiled contact sheet with a burnt-in timecode.
@@ -352,7 +367,53 @@ Stills are scaled to 768 px wide for vision-model token cost.
                         {"kind": "sheet", "path": "/work/proj/.sona/preview/sheet.png"}]}
 ```
 
-Reads from the last cached render step, so a render must run first.
+Reads from the last cached render step, so a render must run first — the final
+one by default, or the preview one with `--preview`. The two caches are
+separate, so `frames` without the flag cannot see a preview-only render.
+
+## history
+
+```
+sona history [--limit 20]
+```
+
+Every mutating command snapshots `sona.json` into `.sona/history/` **before** it
+changes anything. Newest first:
+
+```json
+{"ok": true, "undoable": 3, "entries": [
+  {"seq": 4, "at": 1794301188, "age": "just now", "command": "trim",
+   "clips": 2, "overlays": 1, "captions": false, "index": false}]}
+```
+
+The last 50 are kept. `.sona/` stays cache in the sense that deleting it costs
+history, never content — but it is the only copy of your undo stack, so do not
+clear it reflexively mid-session.
+
+## undo
+
+```
+sona undo [--steps 1]
+```
+
+Restores the document to how it was before the most recent mutation and drops
+that snapshot, so repeating `undo` walks further back.
+
+```console
+$ sona undo
+{"ok": true, "restored": [{"seq": 4, "command": "trim", "age": "just now", "clips": 2}]}
+```
+
+Two behaviours worth knowing:
+
+- **It works on a broken document.** `undo` never parses `sona.json`; it reads
+  the snapshot and replaces the file atomically. A corrupted project is one
+  command from fixed.
+- **No-op snapshots are skipped.** A command that failed after taking a snapshot,
+  or a mutation that changed nothing, is consumed silently rather than costing
+  you an undo.
+
+`no_history` (exit 2) means there is nothing left to restore.
 
 ## doctor
 

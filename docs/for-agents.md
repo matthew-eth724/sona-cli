@@ -13,7 +13,8 @@ doctor → inspect → edit → render → frames → look
 2. `sona inspect` before editing. It is cheap and returns `duration`, the clip
    list and `warnings[]`.
 3. Make the smallest edit that expresses the change. One command, one concept.
-4. `sona render -o out.mp4`. Read `steps.ran` / `steps.reused`.
+4. `sona render --preview` while it is wrong: 480x854 at 15 fps, its own cache,
+   roughly a quarter of the wall time. `sona render -o out.mp4` when it is right.
 5. `sona frames --at <times>` when the change is visual, and actually look at the
    PNGs.
 
@@ -33,6 +34,11 @@ offend the caption burn.
 **Verify with pixels, not with `ok: true`.** `render` exiting 0 proves ffmpeg
 ran. To prove a text overlay is on screen, diff the same frame of a render with
 and without it — see below.
+
+**Preview caches are not final caches.** `render --preview` and `render` share no
+steps, and `frames` reads one or the other. `frames` saying `nothing rendered yet`
+usually means you previewed and asked for final stills, or the reverse; pass
+`--preview` to match.
 
 **Trust the cache counters.**
 - Cold render: `ran == total`.
@@ -90,6 +96,23 @@ order.
 when you want the word boundary exactly as reported. Word times from ASR are
 approximate (±100ms or so), so `--pad 0` plus a tight cut is how you get a
 chopped first phoneme.
+
+## When you break it
+
+Every mutation snapshots the document first:
+
+```bash
+sona history                 # newest first, labelled with the command
+sona undo                    # one step back
+sona undo --steps 3          # three
+```
+
+`undo` does not parse `sona.json`, so it works when your edit made the file
+unreadable. It also skips snapshots that would restore an identical document, so
+a command that failed half-way does not cost you an undo.
+
+Do not hand-edit `.sona/history/` and do not clear `.sona/` mid-session while you
+expect to undo.
 
 ## Editing the file vs running a command
 

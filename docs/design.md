@@ -566,6 +566,17 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **Preview profile.** `render --preview` fits the canvas into 480x854, caps fps
+  at 15, encodes crf 30 ultrafast with 64k audio, and writes `preview.mp4`. The
+  profile tag is part of every step key, so the two renders never share an entry
+  and never invalidate each other — a preview is a different plan, not a
+  quality flag. Measured 1.6 s against 7.1 s for the same 20-second 1080x1920
+  clip.
+- **Snapshot history.** Every mutating command copies the pre-change document
+  into `.sona/history/` first; `undo` restores the newest differing snapshot and
+  drops it, and never parses the live file, so a corrupted project is
+  recoverable. Fifty entries are kept. No-op snapshots are skipped on restore
+  rather than costing an undo.
 - **`sona cut`.** Removes filler words and long silences from a clip by
   replacing it with the spans that survive — the flat clip list already
   expresses "several ranges of one source in order", so no new timeline model was

@@ -151,15 +151,35 @@ enum Cmd {
         sheet: Option<u32>,
         #[arg(short = 'o', long, default_value = ".sona/preview")]
         out: PathBuf,
+        /// Read stills from the preview render instead of the final one.
+        #[arg(long)]
+        preview: bool,
     },
     /// Print the ffmpeg commands a render would run.
-    Plan,
-    /// Render the project.
+    Plan {
+        /// Print the preview (proxy) plan instead of the final one.
+        #[arg(long)]
+        preview: bool,
+    },
+    /// Render the project. `--preview` writes a small proxy for cheap iteration.
     Render {
-        #[arg(short = 'o', long, default_value = "out.mp4")]
-        out: PathBuf,
+        #[arg(short = 'o', long)]
+        out: Option<PathBuf>,
         #[arg(long, default_value = "3600")]
         timeout: u64,
+        /// Low resolution, low frame rate, own cache. For looking, not shipping.
+        #[arg(long)]
+        preview: bool,
+    },
+    /// List the snapshots taken before each mutation, newest first.
+    History {
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+    /// Restore the document as it was before the last N mutations.
+    Undo {
+        #[arg(long, default_value = "1")]
+        steps: usize,
     },
     /// Check ffmpeg, fonts and credentials.
     Doctor,
@@ -194,6 +214,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 bail!("usage: sona add <file>...");
             }
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "add")?;
             let mut media = MediaIndex::default();
             if words.is_some() && (from.is_some() || to.is_some()) {
                 bail!("usage: --words replaces --from/--to, pick one");
@@ -291,6 +312,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Trim { id, from, to, words, pad } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "trim")?;
             let mut media = MediaIndex::default();
             if words.is_some() && (from.is_some() || to.is_some()) {
                 bail!("usage: --words replaces --from/--to, pick one");
@@ -353,6 +375,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 bail!("usage: speed must be positive");
             }
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "speed")?;
             let mut media = MediaIndex::default();
             let clip = store
                 .project
@@ -369,6 +392,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Move { id, to } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "move")?;
             let mut media = MediaIndex::default();
             let pos = store
                 .project
@@ -387,6 +411,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Rm { id } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "rm")?;
             let mut media = MediaIndex::default();
             let pos = store
                 .project
@@ -403,6 +428,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Text { content, from, to, pos, size, color } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "text")?;
             let mut media = MediaIndex::default();
             let at = TimeRange::new(Time::parse(&from)?, Time::parse(&to)?)?;
             let anchor = match pos.as_str() {
@@ -434,6 +460,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Audio { source, gain } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "audio")?;
             let mut media = MediaIndex::default();
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
@@ -448,6 +475,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Caption { source } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "caption")?;
             let mut media = MediaIndex::default();
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
@@ -545,6 +573,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 return Ok(());
             }
 
+            crate::history::record(&store, "cut")?;
             store.project.tracks.video.remove(pos);
             let mut new_ids = Vec::new();
             for (k, span) in cut.kept.iter().enumerate() {
@@ -588,6 +617,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Index { from, audio: audio_arg, force, language } => {
             let mut store = Store::open(&path)?;
+            crate::history::record(&store, "index")?;
             let source = match audio_arg {
                 Some(p) => std::fs::canonicalize(&p)
                     .with_context(|| format!("no such file: {}", p.display()))?,
@@ -772,13 +802,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Frames { at, sheet, out } => {
+        Cmd::Frames { at, sheet, out, preview } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
-            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"))?;
+            let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
+            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile)?;
             let source = plan.last_output().to_path_buf();
             if !source.exists() {
-                bail!("nothing rendered yet (run `sona render`)");
+                bail!(
+                    "nothing rendered yet (run `sona render{}`)",
+                    if preview { " --preview" } else { "" }
+                );
             }
             let out_dir = store.resolve(&out.to_string_lossy());
             let duration = plan.duration;
@@ -799,27 +833,85 @@ fn dispatch(cli: Cli) -> Result<()> {
             ok(json!({"frames": produced}), &[]);
             Ok(())
         }
-        Cmd::Plan => {
+        Cmd::Plan { preview } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
-            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"))?;
-            ok(graph::plan_json(&plan), &plan.warnings);
+            let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
+            let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile)?;
+            ok(graph::plan_json(&plan, profile), &plan.warnings);
             Ok(())
         }
-        Cmd::Render { out, timeout } => {
+        Cmd::Render { out, timeout, preview } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
-            let out_path = store.resolve(&out.to_string_lossy());
-            let plan = graph::plan(&store, &mut media, &out_path)?;
+            let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
+            let target = out.unwrap_or_else(|| {
+                PathBuf::from(if preview { "preview.mp4" } else { "out.mp4" })
+            });
+            let out_path = store.resolve(&target.to_string_lossy());
+            let plan = graph::plan(&store, &mut media, &out_path, profile)?;
             let summary = render::execute(&plan, Duration::from_secs(timeout))?;
+            let canvas = profile.canvas(&store.project.canvas);
             ok(
                 json!({
                     "out": out_path.display().to_string(),
+                    "profile": profile.tag(),
+                    "size": format!("{}x{}", canvas.0, canvas.1),
+                    "fps": profile.fps(store.project.canvas.fps).to_string(),
                     "duration": plan.duration.to_string(),
                     "steps": {"total": summary.total, "ran": summary.ran, "reused": summary.reused},
                 }),
                 &plan.warnings,
             );
+            Ok(())
+        }
+        Cmd::History { limit } => {
+            let project = if path.is_absolute() {
+                path.clone()
+            } else {
+                std::env::current_dir().unwrap_or_default().join(&path)
+            };
+            let entries: Vec<serde_json::Value> = crate::history::list(&project)?
+                .into_iter()
+                .take(limit)
+                .map(|e| {
+                    json!({
+                        "seq": e.seq,
+                        "at": e.at,
+                        "age": e.age(),
+                        "command": e.command,
+                        "clips": e.clips(),
+                        "overlays": e.overlays(),
+                        "captions": e.has_captions(),
+                        "index": e.has_index(),
+                    })
+                })
+                .collect();
+            ok(json!({ "entries": entries, "undoable": entries.len() }), &[]);
+            Ok(())
+        }
+        Cmd::Undo { steps } => {
+            let project = if path.is_absolute() {
+                path.clone()
+            } else {
+                std::env::current_dir().unwrap_or_default().join(&path)
+            };
+            let mut restored = Vec::new();
+            for _ in 0..steps.max(1) {
+                match crate::history::undo(&project)? {
+                    Some(e) => restored.push(json!({
+                        "seq": e.seq,
+                        "command": e.command,
+                        "age": e.age(),
+                        "clips": e.clips(),
+                    })),
+                    None => break,
+                }
+            }
+            if restored.is_empty() {
+                bail!("no_history: nothing to undo");
+            }
+            ok(json!({ "restored": restored }), &[]);
             Ok(())
         }
         Cmd::Doctor => {

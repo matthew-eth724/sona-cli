@@ -8,12 +8,78 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::cache;
+use crate::project::Canvas;
 use crate::ffmpeg::Invocation;
 use crate::media::MediaIndex;
 use crate::paths::{arg, filter_escape, text_escape};
 use crate::project::{Anchor, Clip, Overlay, Project, Store, Transform};
 use crate::report::Diagnostic;
 use crate::time::Time;
+
+/// What the render is for. A preview is a different plan, not a different
+/// quality setting: its canvas and frame rate differ, so every step's key
+/// differs and the two renders share no cache entries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Profile {
+    Final,
+    Preview,
+}
+
+impl Profile {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Profile::Final => "final",
+            Profile::Preview => "preview",
+        }
+    }
+
+    /// Preview fits the canvas into 480x854 and drops to 15 fps. Dimensions are
+    /// forced even because h264 with yuv420p cannot encode odd ones.
+    pub fn canvas(self, canvas: &Canvas) -> (u32, u32) {
+        match self {
+            Profile::Final => (even(canvas.width), even(canvas.height)),
+            Profile::Preview => {
+                let (w, h) = (canvas.width as f64, canvas.height as f64);
+                let scale = (480.0 / w).min(854.0 / h).min(1.0);
+                (even((w * scale).round() as u32), even((h * scale).round() as u32))
+            }
+        }
+    }
+
+    pub fn fps(self, fps: crate::time::Rational) -> crate::time::Rational {
+        match self {
+            Profile::Final => fps,
+            Profile::Preview => {
+                if fps.as_f64() > 15.0 {
+                    crate::time::Rational::new(15, 1)
+                } else {
+                    fps
+                }
+            }
+        }
+    }
+
+    fn video_args(self, inv: &mut Invocation) {
+        let (crf, preset) = match self {
+            Profile::Final => ("18", "veryfast"),
+            Profile::Preview => ("30", "ultrafast"),
+        };
+        inv.push("-c:v").push("libx264").push("-preset").push(preset);
+        inv.push("-crf").push(crf).push("-pix_fmt").push("yuv420p");
+    }
+
+    fn audio_args(self, inv: &mut Invocation) {
+        let bitrate = match self {
+            Profile::Final => "192k",
+            Profile::Preview => "64k",
+        };
+        inv.push("-c:a").push("aac").push("-b:a").push(bitrate).push("-ar").push("48000");
+    }
+}
+
+fn even(v: u32) -> u32 {
+    (v.max(2) / 2) * 2
+}
 
 #[derive(Clone, Debug)]
 pub struct Sidecar {
@@ -44,7 +110,12 @@ impl RenderPlan {
     }
 }
 
-pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderPlan> {
+pub fn plan(
+    store: &Store,
+    media: &mut MediaIndex,
+    out: &Path,
+    profile: Profile,
+) -> Result<RenderPlan> {
     let project = &store.project;
     if project.tracks.video.is_empty() {
         bail!("project has no clips (run `sona add <file>`)");
@@ -78,7 +149,7 @@ pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderP
         if !m.has_audio {
             inv.push("-f").push("lavfi").push("-i").push("anullsrc=r=48000:cl=stereo");
         }
-        let vf = video_chain(clip, project);
+        let vf = video_chain(clip, project, profile);
         inv.push("-vf").push(vf);
         inv.push("-af").push(audio_chain(clip, m.has_audio));
         inv.push("-map").push("0:v:0");
@@ -93,7 +164,12 @@ pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderP
         inv.push("-shortest");
         inv.push("-movflags").push("+faststart");
         inv.push("-f").push("mp4");
-        let key = cache::hash(&[inv.render(), cache::stat_token(&src), version.clone()]);
+        let key = cache::hash(&[
+            inv.render(),
+            cache::stat_token(&src),
+            version.clone(),
+            profile.tag().into(),
+        ]);
         let output = cache::path(&cache_dir, &key, "mp4");
         inv.push(arg(&output));
         steps.push(Step {
@@ -117,7 +193,12 @@ pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderP
         }
         _ => {
             let keys: Vec<String> = steps.iter().map(|s| s.key.clone()).collect();
-            let key = cache::hash(&[keys.join(","), "concat".into(), version.clone()]);
+            let key = cache::hash(&[
+                keys.join(","),
+                "concat".into(),
+                version.clone(),
+                profile.tag().into(),
+            ]);
             let list_path = cache::path(&cache_dir, &key, "txt");
             let output = cache::path(&cache_dir, &key, "mp4");
             let mut body = String::new();
@@ -183,14 +264,19 @@ pub fn plan(store: &Store, media: &mut MediaIndex, out: &Path) -> Result<RenderP
         inv.push("-filter_complex").push(graph);
         inv.push("-map").push("[v]");
         inv.push("-map").push("[a]");
-        inv.push("-c:v").push("libx264").push("-preset").push("veryfast");
-        inv.push("-crf").push("18").push("-pix_fmt").push("yuv420p");
-        inv.push("-c:a").push("aac").push("-b:a").push("192k");
+        profile.video_args(&mut inv);
+        profile.audio_args(&mut inv);
         inv.push("-movflags").push("+faststart");
         // The argv *is* the step: any change to a filter, an overlay, a style or
         // the canvas must move the key. Building it from inputs alone let a new
         // text overlay reuse the previous render.
-        let mut key_parts = vec![base_key.clone(), "decorate".into(), version.clone(), inv.render()];
+        let mut key_parts = vec![
+            base_key.clone(),
+            "decorate".into(),
+            version.clone(),
+            profile.tag().into(),
+            inv.render(),
+        ];
         key_parts.extend(extra_inputs.iter().cloned());
         let key = cache::hash(&key_parts);
         let output = cache::path(&cache_dir, &key, "mp4");
@@ -220,8 +306,8 @@ fn fmt_secs(t: Time) -> String {
     format!("{:.6}", t.secs_f64())
 }
 
-fn video_chain(clip: &Clip, project: &Project) -> String {
-    let (w, h) = (project.canvas.width, project.canvas.height);
+fn video_chain(clip: &Clip, project: &Project, profile: Profile) -> String {
+    let (w, h) = profile.canvas(&project.canvas);
     let mut parts = vec![match clip.transform {
         Transform::Fit => format!(
             "scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
@@ -231,10 +317,8 @@ fn video_chain(clip: &Clip, project: &Project) -> String {
         ),
     }];
     parts.push("setsar=1".into());
-    parts.push(format!(
-        "fps={}/{}",
-        project.canvas.fps.num, project.canvas.fps.den
-    ));
+    let fps = profile.fps(project.canvas.fps);
+    parts.push(format!("fps={}/{}", fps.num, fps.den));
     if (clip.speed - 1.0).abs() > f64::EPSILON {
         parts.push(format!("setpts=PTS/{:.6}", clip.speed));
     }
@@ -336,7 +420,7 @@ fn concat_line(path: &Path) -> String {
 }
 
 /// What `sona plan` prints. The agent-facing debugging lever.
-pub fn plan_json(plan: &RenderPlan) -> serde_json::Value {
+pub fn plan_json(plan: &RenderPlan, profile: Profile) -> serde_json::Value {
     let steps: Vec<serde_json::Value> = plan
         .steps
         .iter()
@@ -349,12 +433,54 @@ pub fn plan_json(plan: &RenderPlan) -> serde_json::Value {
             })
         })
         .collect();
-    serde_json::json!({ "steps": steps, "out": plan.out.display().to_string() })
+    serde_json::json!({
+        "profile": profile.tag(),
+        "steps": steps,
+        "out": plan.out.display().to_string(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::Canvas;
+    use crate::time::Rational;
+
+    fn canvas(w: u32, h: u32, fps: Rational) -> Canvas {
+        Canvas { width: w, height: h, fps }
+    }
+
+    #[test]
+    fn final_profile_keeps_the_canvas_but_makes_it_even() {
+        let p = Profile::Final;
+        assert_eq!(p.canvas(&canvas(1080, 1920, Rational::new(30, 1))), (1080, 1920));
+        assert_eq!(p.canvas(&canvas(1081, 1919, Rational::new(30, 1))), (1080, 1918));
+    }
+
+    #[test]
+    fn preview_fits_inside_480x854_and_keeps_aspect() {
+        let p = Profile::Preview;
+        assert_eq!(p.canvas(&canvas(1080, 1920, Rational::new(30, 1))), (480, 852));
+        assert_eq!(p.canvas(&canvas(1920, 1080, Rational::new(30, 1))), (480, 270));
+        assert_eq!(p.canvas(&canvas(1280, 720, Rational::new(30, 1))), (480, 270));
+        // small sources are not upscaled
+        assert_eq!(p.canvas(&canvas(576, 1024, Rational::new(30, 1))), (480, 852));
+        assert_eq!(p.canvas(&canvas(320, 240, Rational::new(30, 1))), (320, 240));
+    }
+
+    #[test]
+    fn preview_caps_fps_at_15() {
+        let p = Profile::Preview;
+        assert_eq!(p.fps(Rational::new(30, 1)).to_string(), "15");
+        assert_eq!(p.fps(Rational::new(24, 1)).to_string(), "15");
+        assert_eq!(p.fps(Rational::new(12, 1)).to_string(), "12");
+        assert_eq!(Profile::Final.fps(Rational::new(30, 1)).to_string(), "30");
+    }
+
+    #[test]
+    fn profiles_have_distinct_tags_so_keys_never_collide() {
+        assert_ne!(Profile::Final.tag(), Profile::Preview.tag());
+    }
 
     #[test]
     fn atempo_never_leaves_the_documented_range() {

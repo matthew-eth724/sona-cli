@@ -6,6 +6,7 @@ mod cli;
 mod ffmpeg;
 mod frames;
 mod graph;
+mod history;
 mod index;
 mod media;
 mod paths;
