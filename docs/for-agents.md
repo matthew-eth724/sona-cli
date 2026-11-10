@@ -65,6 +65,11 @@ sona cut clip_1 --fillers --dry-run
 **Every warning and error carries a `fix`.** Read it: it is the command that
 clears the problem, usually with your own ids already filled in.
 
+**Duck the bed from the transcript, not by ear.** `sona duck --db -18` builds the
+gain envelope from word times, so the music drops exactly where someone speaks
+and lifts in the gaps. Re-run it after any change to the cut: `duck_stale` tells
+you when, and the fix is the command itself.
+
 **Transitions cost a re-encode; cuts do not.** Adding `transition` to an assemble
 step turns the copy-concat into an `xfade` chain. Worth it between shots, not
 worth it between two halves of one sentence.

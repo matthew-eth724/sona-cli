@@ -59,6 +59,15 @@ re-see the cue count.
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
+**Ducking is off by a few seconds.** The spans are mapped through the clips at the
+moment you run `sona duck`. Re-cut the timeline and they go stale; `duck_stale`
+says so and `sona duck` re-maps them. If a clip is not cut from the indexed file,
+`duck` refuses rather than guessing.
+
+**The bed ducks where nobody speaks.** The transcript and the picture disagree —
+usually an index built from one export and a clip from another. `sona view
+--range` shows the word times `duck` is using.
+
 **The program got shorter after adding a transition.** Correct: the transition
 overlaps the two clips, so `duration` drops by the transition length. Check with
 `sona list`.

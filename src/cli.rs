@@ -150,6 +150,26 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Duck the music bed under speech, using the word index.
+    Duck {
+        /// How far to drop the bed. Negative.
+        #[arg(long, default_value = "-12", allow_hyphen_values = true)]
+        db: f32,
+        #[arg(long, default_value = "140ms")]
+        ramp: String,
+        /// Words closer than this are one phrase.
+        #[arg(long, default_value = "400ms")]
+        gap: String,
+        /// Grow each phrase by this so the duck leads the words slightly.
+        #[arg(long, default_value = "80ms")]
+        pad: String,
+        /// Remove ducking.
+        #[arg(long)]
+        none: bool,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Set a music bed played under the clips.
     Audio {
         source: PathBuf,
@@ -600,6 +620,91 @@ fn dispatch(cli: Cli) -> Result<()> {
                 json!({"changed": [id], "invalidated": 1, "width_px": px}),
             )
         }
+        Cmd::Duck { db, ramp, gap, pad, none, dry_run } => {
+            let mut store = Store::open(&path)?;
+            if !dry_run {
+                crate::history::record(&store, "duck")?;
+            }
+            let mut media = MediaIndex::default();
+            let bed = store
+                .project
+                .tracks
+                .audio
+                .as_ref()
+                .context("usage: no music bed; run `sona audio <file>` first")?
+                .clone();
+            if db >= 0.0 {
+                bail!("usage: --db must be negative (it lowers the bed)");
+            }
+
+            let spans = if none {
+                Vec::new()
+            } else {
+                let idx = project_index(&store)?;
+                let idx_src = idx_source(&store);
+                // Only clips cut from the indexed file can be ducked; speech
+                // times from a different file mean nothing on this timeline.
+                let mut clips = Vec::new();
+                let mut durations = Vec::new();
+                for c in &store.project.tracks.video {
+                    let src = store.resolve(&c.source);
+                    if !same_file(&idx_src, &src) {
+                        bail!(
+                            "usage: the index describes {}, which no clip uses; index the clip's own file",
+                            idx_src.display()
+                        );
+                    }
+                    let m = media.get(&src)?;
+                    clips.push(c.clone());
+                    durations.push(c.out_duration(m.duration));
+                }
+                if clips.is_empty() {
+                    bail!("usage: no clips to duck under");
+                }
+                let words: Vec<(Time, Time)> =
+                    idx.words.iter().map(|w| (w.start, w.end)).collect();
+                crate::graph::speech_spans(
+                    &clips,
+                    &durations,
+                    &words,
+                    Time::parse(&gap)?,
+                    Time::parse(&pad)?,
+                )
+            };
+
+            let ramp = Time::parse(&ramp)?;
+            let duck = if none {
+                None
+            } else {
+                Some(crate::project::Duck {
+                    db,
+                    ramp,
+                    spans: spans
+                        .iter()
+                        .map(|(s, e)| TimeRange { start: *s, end: *e })
+                        .collect(),
+                    layout: store.project.layout_token(),
+                })
+            };
+            let span_count = spans.len();
+            if let Some(b) = store.project.tracks.audio.as_mut() {
+                b.duck = duck;
+            } else {
+                bail!("usage: no music bed; run `sona audio <file>` first");
+            }
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({
+                    "changed": ["audio"],
+                    "invalidated": 1,
+                    "duck_db": if none { 0.0 } else { db },
+                    "phrases": span_count,
+                    "bed": bed.source,
+                }),
+            )
+        }
         Cmd::Transition { id, kind, duration, none, dry_run } => {
             let mut store = Store::open(&path)?;
             if !dry_run {
@@ -667,9 +772,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut media = MediaIndex::default();
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
+            // Replacing the bed keeps any existing duck settings, but the spans
+            // are stale until `sona duck` runs again.
+            let duck = store.project.tracks.audio.as_ref().and_then(|b| b.duck.clone());
             store.project.tracks.audio = Some(AudioBed {
                 source: source.to_string_lossy().to_string(),
                 gain_db: gain,
+                duck,
             });
             finish(&mut store, &mut media, dry_run, json!({"changed": ["audio"], "invalidated": 1}))
         }

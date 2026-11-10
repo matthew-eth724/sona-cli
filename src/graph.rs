@@ -96,6 +96,118 @@ pub struct Step {
     pub output: PathBuf,
 }
 
+/// Where each clip sits on the timeline, so source time can be mapped to
+/// timeline time. Transitions overlap, so the starts are cumulative minus the
+/// transitions already consumed.
+pub fn clip_offsets(clips: &[Clip], durations: &[Time]) -> Vec<Time> {
+    let mut out = Vec::with_capacity(clips.len());
+    let mut cursor = Time::ZERO;
+    for (i, c) in clips.iter().enumerate() {
+        out.push(cursor);
+        let next = Time::from_micros(
+            cursor.micros() + durations[i].micros()
+                - clips
+                    .get(i + 1)
+                    .and_then(|n| n.transition.as_ref())
+                    .map(|t| t.duration.micros())
+                    .unwrap_or(0),
+        );
+        cursor = next.max(cursor);
+    }
+    out
+}
+
+/// Speech spans in *timeline* time, for ducking.
+///
+/// Words are merged into phrases with `gap`, padded by `pad`, and mapped through
+/// the clips: a span that starts in clip 2 and ends in clip 3 is split, because
+/// each clip can move the source time differently.
+pub fn speech_spans(
+    clips: &[Clip],
+    durations: &[Time],
+    words: &[(Time, Time)],
+    gap: Time,
+    pad: Time,
+) -> Vec<(Time, Time)> {
+    if clips.is_empty() || words.is_empty() {
+        return Vec::new();
+    }
+    // 1. merge words into phrases in source time
+    let mut phrases: Vec<(i64, i64)> = Vec::new();
+    for (start, end) in words {
+        let (s, e) = (start.micros(), end.micros());
+        match phrases.last_mut() {
+            Some(last) if s - last.1 <= gap.micros() => last.1 = last.1.max(e),
+            _ => phrases.push((s, e)),
+        }
+    }
+
+    // 2. map each phrase through whichever clip covers it
+    let offsets = clip_offsets(clips, durations);
+    let mut out: Vec<(Time, Time)> = Vec::new();
+    for (ps, pe) in phrases {
+        let ps = ps - pad.micros();
+        let pe = pe + pad.micros();
+        for (i, clip) in clips.iter().enumerate() {
+            let src_in = clip.src_in.micros();
+            let src_end = src_in + durations[i].micros().saturating_mul(1).max(0);
+            // Clip i covers source time [src_in, src_in + span), where span is
+            // the pre-speed length. Reconstruct it from the post-speed duration.
+            let span = (durations[i].secs_f64() * clip.speed * 1e6) as i64;
+            let (cs, ce) = (src_in, src_in + span);
+            let start = ps.max(cs);
+            let end = pe.min(ce);
+            if end <= start {
+                continue;
+            }
+            let tl = |t: i64| {
+                Time::from_micros(offsets[i].micros() + ((t - cs) as f64 / clip.speed) as i64)
+            };
+            out.push((tl(start), tl(end)));
+        }
+    }
+
+    // 3. merge overlapping spans in timeline time
+    out.sort_by_key(|(s, _)| s.micros());
+    let mut merged: Vec<(Time, Time)> = Vec::new();
+    for (s, e) in out {
+        match merged.last_mut() {
+            Some(last) if s.micros() <= last.1.micros() => {
+                if e.micros() > last.1.micros() {
+                    last.1 = e;
+                }
+            }
+            _ => merged.push((s, e)),
+        }
+    }
+    merged
+}
+
+/// `volume='…':eval=frame` expression that drops by `db` inside each span and
+/// ramps over `ramp`. Trapezoids are summed and clamped, so overlapping spans
+/// never duck harder than `db`.
+pub fn duck_expression(spans: &[(Time, Time)], db: f32, ramp: Time) -> Option<String> {
+    if spans.is_empty() {
+        return None;
+    }
+    let depth = 1.0 - 10f64.powf(db as f64 / 20.0);
+    let r = (ramp.secs_f64()).max(0.001);
+    let terms: Vec<String> = spans
+        .iter()
+        .map(|(s, e)| {
+            format!(
+                "max(0,min(1,min((t-{:.3})/{r:.3},({:.3}-t)/{r:.3})))",
+                s.secs_f64(),
+                e.secs_f64()
+            )
+        })
+        .collect();
+    Some(format!(
+        "1-{depth:.4}*min(1,{})",
+        terms.join("+")
+    ))
+}
+
 /// One normalized clip on its way into the assemble stage.
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -522,14 +634,26 @@ fn build_filter_graph(
 
     if has_bed {
         let bed = project.tracks.audio.as_ref().unwrap();
+        let mut chain: Vec<String> = Vec::new();
         if bed.gain_db.abs() > 0.01 {
+            chain.push(format!("volume={:.2}dB", bed.gain_db));
+        }
+        // Ducking is index-driven: the bed drops where the words are.
+        if let Some(duck) = &bed.duck {
+            let spans: Vec<(Time, Time)> =
+                duck.spans.iter().map(|r| (r.start, r.end)).collect();
+            if let Some(expr) = duck_expression(&spans, duck.db, duck.ramp) {
+                chain.push(format!("volume='{expr}':eval=frame"));
+            }
+        }
+        if chain.is_empty() {
             graph.push_str(&format!(
-                ";[{bed_input}:a]volume={:.2}dB[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]",
-                bed.gain_db
+                ";[0:a][{bed_input}:a]amix=inputs=2:duration=first:normalize=0[a]"
             ));
         } else {
             graph.push_str(&format!(
-                ";[0:a][{bed_input}:a]amix=inputs=2:duration=first:normalize=0[a]"
+                ";[{bed_input}:a]{}[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]",
+                chain.join(",")
             ));
         }
     } else {
@@ -680,5 +804,81 @@ mod tests {
     fn concat_lines_are_absolute_and_escaped() {
         let line = concat_line(Path::new("/tmp/a b/it's.mp4"));
         assert_eq!(line, "file '/tmp/a b/it'\\''s.mp4'");
+    }
+}
+
+#[cfg(test)]
+mod duck_tests {
+    use super::*;
+    use crate::project::{Clip, TransitionKind, Transform};
+
+    fn clip(id: &str, src_in: f64, out: f64, speed: f64, tx: Option<f64>) -> Clip {
+        Clip {
+            id: id.into(),
+            source: "/x.mp4".into(),
+            src_in: Time::from_secs_f64(src_in),
+            src_out: Some(Time::from_secs_f64(src_in + out * speed)),
+            speed,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+            transition: tx.map(|d| crate::project::Transition {
+                kind: TransitionKind::Crossfade,
+                duration: Time::from_secs_f64(d),
+            }),
+        }
+    }
+
+    #[test]
+    fn offsets_account_for_transition_overlap() {
+        let clips = vec![clip("a", 0.0, 3.0, 1.0, None), clip("b", 0.0, 3.0, 1.0, Some(0.6))];
+        let d = vec![Time::from_secs_f64(3.0), Time::from_secs_f64(3.0)];
+        let o = clip_offsets(&clips, &d);
+        assert_eq!(o[0].micros(), 0);
+        assert_eq!(o[1].micros(), 2_400_000, "second clip starts 0.6s early");
+    }
+
+    #[test]
+    fn source_time_maps_through_a_trimmed_clip() {
+        // clip starts 10s into the source, so source 12s is 2s into the timeline
+        let clips = vec![clip("a", 10.0, 5.0, 1.0, None)];
+        let d = vec![Time::from_secs_f64(5.0)];
+        let words = vec![(Time::from_secs_f64(12.0), Time::from_secs_f64(12.5))];
+        let spans = speech_spans(&clips, &d, &words, Time::ZERO, Time::ZERO);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0.micros(), 2_000_000);
+        assert_eq!(spans[0].1.micros(), 2_500_000);
+    }
+
+    #[test]
+    fn speed_changes_the_mapping() {
+        // 2x speed: source 3.0s in is 1.5s on the timeline
+        let clips = vec![clip("a", 0.0, 4.0, 2.0, None)];
+        let d = vec![Time::from_secs_f64(2.0)];
+        let words = vec![(Time::from_secs_f64(3.0), Time::from_secs_f64(3.5))];
+        let spans = speech_spans(&clips, &d, &words, Time::ZERO, Time::ZERO);
+        assert_eq!(spans[0].0.micros(), 1_500_000);
+        assert_eq!(spans[0].1.micros(), 1_750_000);
+    }
+
+    #[test]
+    fn a_phrase_across_a_transition_covers_both_clips() {
+        // clip b overlaps clip a by 0.6s, so source 3-4s lands at timeline
+        // 2.4-3.4 while the tail of a still runs to 3.0. The union is 2.0-3.4.
+        let clips = vec![clip("a", 0.0, 3.0, 1.0, None), clip("b", 3.0, 3.0, 1.0, Some(0.6))];
+        let d = vec![Time::from_secs_f64(3.0), Time::from_secs_f64(3.0)];
+        let words = vec![(Time::from_secs_f64(2.0), Time::from_secs_f64(4.0))];
+        let spans = speech_spans(&clips, &d, &words, Time::from_secs_f64(5.0), Time::ZERO);
+        assert_eq!(spans.len(), 1, "{spans:?}");
+        assert_eq!(spans[0].0.micros(), 2_000_000);
+        assert_eq!(spans[0].1.micros(), 3_400_000);
+    }
+
+    #[test]
+    fn expression_is_silent_outside_the_spans() {
+        let spans = vec![(Time::from_secs_f64(2.0), Time::from_secs_f64(4.0))];
+        let expr = duck_expression(&spans, -12.0, Time::from_micros(200_000)).unwrap();
+        assert!(expr.starts_with("1-0.7488"), "{expr}");
+        assert!(expr.contains("(t-2.000)/0.200"));
+        assert!(duck_expression(&[], -12.0, Time::ZERO).is_none());
     }
 }

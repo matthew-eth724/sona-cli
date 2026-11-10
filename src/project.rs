@@ -120,6 +120,49 @@ pub struct AudioBed {
     pub source: String,
     #[serde(default)]
     pub gain_db: f32,
+    /// Lower the bed while there is speech, using the word index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duck: Option<Duck>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Duck {
+    /// How far to duck. Negative.
+    pub db: f32,
+    /// Fade in and out over this long, so the gain does not step.
+    #[serde(default = "default_ramp")]
+    pub ramp: Time,
+    /// Speech spans already mapped to timeline time. Resolved when `sona duck`
+    /// runs, so a render never needs the index.
+    #[serde(default)]
+    pub spans: Vec<TimeRange>,
+    /// Fingerprint of the cut these spans were mapped against. If the timeline
+    /// moves, the spans are stale and `diagnose` says so.
+    #[serde(default)]
+    pub layout: String,
+}
+
+impl Project {
+    /// Identity of the cut: clip bounds, speed and transitions. Duck spans are
+    /// only valid for the layout they were computed against.
+    pub fn layout_token(&self) -> String {
+        let mut parts = Vec::new();
+        for c in &self.tracks.video {
+            parts.push(format!(
+                "{}:{}:{:?}:{}:{:?}",
+                c.id,
+                c.src_in.micros(),
+                c.src_out.map(|t| t.micros()),
+                c.speed,
+                c.transition.as_ref().map(|t| (t.kind.xfade(), t.duration.micros()))
+            ));
+        }
+        parts.join("|")
+    }
+}
+
+fn default_ramp() -> Time {
+    Time::from_micros(140_000)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -394,6 +437,20 @@ impl Project {
                 }
             }
             prev_len = len;
+        }
+        if let Some(bed) = &self.tracks.audio {
+            if let Some(duck) = &bed.duck {
+                if !duck.layout.is_empty() && duck.layout != self.layout_token() {
+                    out.push(
+                        Diagnostic::new(
+                            "duck_stale",
+                            "tracks.audio.duck",
+                            "the timeline moved since the duck spans were mapped",
+                        )
+                        .with_fix("sona duck"),
+                    );
+                }
+            }
         }
         if let Some(caps) = &self.tracks.captions {
             if !Path::new(&caps.source).exists() {

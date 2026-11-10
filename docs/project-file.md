@@ -97,6 +97,20 @@ One optional music bed, mixed under the clips and ended by them.
 | --- | --- | --- |
 | `source` | string | required |
 | `gain_db` | f32 | `0.0` |
+| `duck` | object | omitted when not ducking |
+
+`duck` is written by `sona duck`:
+
+| field | type | notes |
+| --- | --- | --- |
+| `db` | f32 | negative; how far the bed drops |
+| `ramp` | time | fade length for each phrase |
+| `spans` | array of `{start,end}` | speech windows **in timeline time**, already mapped |
+| `layout` | string | fingerprint of the cut these spans were mapped against |
+
+`layout` is what makes staleness detectable: if the clips move, `diagnose` reports
+`duck_stale` and the fix is to run `sona duck` again. Spans are timeline time, so
+a render never needs the index.
 
 ## tracks.overlays
 

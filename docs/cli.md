@@ -251,6 +251,46 @@ Sets the music bed played under the clips, mixed at `duration=first` so it never
 extends the program. Negative gain needs no `--` escape. Replaces any previous
 bed; there is exactly one.
 
+## duck
+
+```
+sona duck [--db -12] [--ramp 140ms] [--gap 400ms] [--pad 80ms] [--none]
+```
+
+Lowers the music bed wherever the word index says there is speech. This is the
+payoff of having a transcript: a gain envelope built from words, not a signal
+compressor guessing at loudness.
+
+```console
+$ sona audio bed.mp3 --gain -6
+$ sona duck --db -18
+{"ok": true, "changed": ["audio"], "duck_db": -18.0, "phrases": 2, "invalidated": 1}
+
+$ sona plan | grep -o "volume='[^']*'"
+volume='1-0.8741*min(1,max(0,min(1,min((t-1.920)/0.140,(4.080-t)/0.140)))+…':eval=frame
+```
+
+Measured on a silent-clip bed: `-24.5 dB` in both windows without ducking, and
+`-42.5 dB during speech / -24.5 dB in the gaps` with `--db -18`.
+
+How the envelope is built:
+
+- Words closer than `--gap` become one phrase; each phrase grows by `--pad` so
+  the duck leads the word slightly.
+- Phrases are mapped from **source** time to **timeline** time through the clips,
+  honouring `src_in`, speed and transitions, then merged where they overlap.
+- Each phrase becomes a trapezoid of length `--ramp`; trapezoids sum and clamp, so
+  overlapping phrases never duck harder than `--db`. A word at 3.0s of a clip
+  trimmed to start at 10s ducks at 3.0s of the timeline only if the clip actually
+  covers it.
+- The spans are resolved when you run `duck` and stored in the project, so a
+  render needs no index. `duck_stale` warns when the cut has moved since; the fix
+  is `sona duck`.
+- `--none` removes the ducking and leaves the bed alone.
+
+Every clip must be cut from the file the index describes, or there is no honest
+mapping and the command refuses.
+
 ## caption
 
 ```

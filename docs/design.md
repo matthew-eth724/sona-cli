@@ -566,6 +566,12 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **Ducking from the index.** The bed's gain is a `volume=…:eval=frame`
+  expression built from word times, not a signal compressor: trapezoids per
+  phrase, summed and clamped so overlaps never exceed `--db`. Source time is
+  mapped to timeline time through `src_in`, speed and transitions, and the mapped
+  spans are stored in the project with a fingerprint of the cut, so a render
+  needs no index and a moved timeline is detectable (`duck_stale`).
 - **Image overlays and transitions.** An image is an `overlay` chain node per
   overlay, because ffmpeg's `overlay` takes exactly two inputs and cannot chain
   inside one filter string; width and margin are stored as fractions of the
