@@ -176,6 +176,44 @@ impl Index {
     }
 }
 
+/// `w27` or `w27-w35`, 1-based and inclusive, as printed by `view`/`find`.
+pub fn parse_word_range(raw: &str) -> Result<(usize, usize)> {
+    let s = raw.trim();
+    let rest = s
+        .strip_prefix('w')
+        .with_context(|| format!("usage: --words w12 or w12-w19, got `{raw}`"))?;
+    let (a, b) = match rest.split_once('-') {
+        Some((x, y)) => (x, y.strip_prefix('w').unwrap_or(y)),
+        None => (rest, rest),
+    };
+    let start: usize = a
+        .parse()
+        .with_context(|| format!("usage: --words w12 or w12-w19, got `{raw}`"))?;
+    let end: usize = b
+        .parse()
+        .with_context(|| format!("usage: --words w12 or w12-w19, got `{raw}`"))?;
+    if start == 0 || end < start {
+        bail!("usage: --words must be w1 or a range like w12-w19, got `{raw}`");
+    }
+    Ok((start - 1, end - 1))
+}
+
+/// Source times for a word range, with padding on both sides. ASR word
+/// boundaries are approximate, so a cut exactly at `start` clips the first
+/// phoneme; a small pad is the difference between "fine" and "audible".
+pub fn span_for(idx: &Index, first: usize, last: usize, pad: Time) -> Result<(Time, Time)> {
+    if last >= idx.words.len() {
+        bail!(
+            "usage: word w{} is past the end of the index ({} words)",
+            last + 1,
+            idx.words.len()
+        );
+    }
+    let start = Time::from_micros((idx.words[first].start.micros() - pad.micros()).max(0));
+    let end = Time::from_micros(idx.words[last].end.micros() + pad.micros());
+    Ok((start, end))
+}
+
 /// Lowercase, alphanumeric only. `Ship?` and `ship` are the same token.
 pub fn normalize(s: &str) -> String {
     s.chars()
@@ -328,5 +366,60 @@ mod tests {
     fn clock_switches_to_hours_past_3600() {
         assert_eq!(clock(Time::from_secs_f64(252.0)), "04:12.0");
         assert_eq!(clock(Time::from_secs_f64(3852.0)), "1:04:12.0");
+    }
+}
+
+#[cfg(test)]
+mod word_range_tests {
+    use super::*;
+
+    #[test]
+    fn parses_single_and_range() {
+        assert_eq!(parse_word_range("w27").unwrap(), (26, 26));
+        assert_eq!(parse_word_range("w27-w35").unwrap(), (26, 34));
+        assert_eq!(parse_word_range("w1-w1").unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn rejects_junk() {
+        assert!(parse_word_range("27").is_err());
+        assert!(parse_word_range("w0").is_err());
+        assert!(parse_word_range("w9-w2").is_err());
+        assert!(parse_word_range("w").is_err());
+        assert!(parse_word_range("w1-").is_err());
+    }
+
+    fn idx() -> Index {
+        Index {
+            version: VERSION,
+            audio_hash: "t".into(),
+            audio_duration: Time::from_secs_f64(10.0),
+            transcript_hash: "t".into(),
+            provider: "gemini".into(),
+            language: None,
+            approximate: false,
+            words: vec![
+                Word { id: "w1".into(), text: "Ship".into(), start: Time::from_secs_f64(1.0), end: Time::from_secs_f64(1.4), speaker: None, confidence: None },
+                Word { id: "w2".into(), text: "faster.".into(), start: Time::from_secs_f64(1.4), end: Time::from_secs_f64(2.0), speaker: None, confidence: None },
+            ],
+        }
+    }
+
+    #[test]
+    fn span_adds_padding_on_both_sides() {
+        let (a, b) = span_for(&idx(), 0, 1, Time::parse("120ms").unwrap()).unwrap();
+        assert_eq!(a.micros(), 880_000);
+        assert_eq!(b.micros(), 2_120_000);
+    }
+
+    #[test]
+    fn span_never_goes_negative() {
+        let (a, _) = span_for(&idx(), 0, 0, Time::parse("2s").unwrap()).unwrap();
+        assert_eq!(a.micros(), 0);
+    }
+
+    #[test]
+    fn span_rejects_past_the_end() {
+        assert!(span_for(&idx(), 0, 5, Time::ZERO).is_err());
     }
 }

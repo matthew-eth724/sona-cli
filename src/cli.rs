@@ -45,6 +45,12 @@ enum Cmd {
         /// Crop to fill the canvas instead of padding to fit.
         #[arg(long)]
         fill: bool,
+        /// Cut by word ids from the index: `w12` or `w12-w19`.
+        #[arg(long)]
+        words: Option<String>,
+        /// Padding either side of a word range.
+        #[arg(long, default_value = "120ms")]
+        pad: String,
     },
     /// Show the timeline as JSON.
     List,
@@ -55,6 +61,11 @@ enum Cmd {
         from: Option<String>,
         #[arg(long)]
         to: Option<String>,
+        /// Cut by word ids from the index: `w12` or `w12-w19`.
+        #[arg(long)]
+        words: Option<String>,
+        #[arg(long, default_value = "120ms")]
+        pad: String,
     },
     /// Change a clip's playback speed (pitch preserved).
     Speed { id: String, speed: f64 },
@@ -158,14 +169,21 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Add { files, from, to, speed, at, fill } => {
+        Cmd::Add { files, from, to, speed, at, fill, words, pad } => {
             if files.is_empty() {
                 bail!("usage: sona add <file>...");
             }
             let mut store = Store::open(&path)?;
             let mut media = MediaIndex::default();
-            let from = from.map(|s| Time::parse(&s)).transpose()?;
-            let to = to.map(|s| Time::parse(&s)).transpose()?;
+            if words.is_some() && (from.is_some() || to.is_some()) {
+                bail!("usage: --words replaces --from/--to, pick one");
+            }
+            if words.is_some() && files.len() != 1 {
+                bail!("usage: --words cuts one file; pass a single source");
+            }
+            let pad = Time::parse(&pad)?;
+            let mut from = from.map(|s| Time::parse(&s)).transpose()?;
+            let mut to = to.map(|s| Time::parse(&s)).transpose()?;
             if let (Some(f), Some(t)) = (from, to) {
                 if t <= f {
                     bail!("--to must be after --from");
@@ -182,6 +200,21 @@ fn dispatch(cli: Cli) -> Result<()> {
                 let m = media.get(&abs)?.clone();
                 if !m.has_video {
                     bail!("{} has no video stream", file.display());
+                }
+                if let Some(spec) = &words {
+                    let idx = project_index(&store)?;
+                    if !same_file(&idx_source(&store), &abs) {
+                        bail!(
+                            "usage: the index describes {}, not {}; run `sona index --from <transcript> --audio {}`",
+                            idx_source(&store).display(),
+                            abs.display(),
+                            abs.display()
+                        );
+                    }
+                    let (first, last) = index::parse_word_range(spec)?;
+                    let (ws, we) = index::span_for(&idx, first, last, pad)?;
+                    from = Some(ws);
+                    to = Some(we);
                 }
                 let id = store.project.next_id("clip");
                 let clip = Clip {
@@ -236,9 +269,38 @@ fn dispatch(cli: Cli) -> Result<()> {
             ok(json!({"clips": clips, "duration": duration.to_string()}), &[]);
             Ok(())
         }
-        Cmd::Trim { id, from, to } => {
+        Cmd::Trim { id, from, to, words, pad } => {
             let mut store = Store::open(&path)?;
             let mut media = MediaIndex::default();
+            if words.is_some() && (from.is_some() || to.is_some()) {
+                bail!("usage: --words replaces --from/--to, pick one");
+            }
+            let word_span = match &words {
+                Some(spec) => {
+                    let idx = project_index(&store)?;
+                    let idx_src = idx_source(&store);
+                    let clip_src = store.resolve(
+                        &store
+                            .project
+                            .tracks
+                            .video
+                            .iter()
+                            .find(|c| c.id == id)
+                            .with_context(|| format!("usage: no clip {id}"))?
+                            .source,
+                    );
+                    if !same_file(&idx_src, &clip_src) {
+                        bail!(
+                            "usage: the index describes {}, not {}; trim by --from/--to, or index that file",
+                            idx_src.display(),
+                            clip_src.display()
+                        );
+                    }
+                    let (first, last) = index::parse_word_range(spec)?;
+                    Some(index::span_for(&idx, first, last, Time::parse(&pad)?)?)
+                }
+                None => None,
+            };
             let clip = store
                 .project
                 .tracks
@@ -246,6 +308,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .iter_mut()
                 .find(|c| c.id == id)
                 .with_context(|| format!("usage: no clip {id}"))?;
+            if let Some((ws, we)) = word_span {
+                clip.src_in = ws;
+                clip.src_out = Some(we);
+            }
             if let Some(f) = from {
                 clip.src_in = Time::parse(&f)?;
             }
@@ -648,6 +714,23 @@ fn after_edit(store: &Store, media: &mut MediaIndex) -> (serde_json::Value, Vec<
     let duration = store.project.duration(media);
     let warnings = store.project.diagnose(media);
     (json!(duration.to_string()), warnings)
+}
+
+fn idx_source(store: &Store) -> PathBuf {
+    let s = store
+        .project
+        .tracks
+        .index
+        .as_ref()
+        .map(|i| i.source.clone())
+        .unwrap_or_default();
+    std::fs::canonicalize(&s).unwrap_or_else(|_| PathBuf::from(s))
+}
+
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let ca = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
+    let cb = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
+    ca == cb
 }
 
 fn project_index(store: &Store) -> Result<index::Index> {

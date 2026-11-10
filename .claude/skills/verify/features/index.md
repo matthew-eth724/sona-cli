@@ -35,6 +35,11 @@ $SONA view --range 0:05-0:15
 
 $SONA find "good memory"
 # 00:12.6-00:14.4  w27-w31  You've got a [good memory.]
+
+# word ids are the cut handles
+$SONA add clip-a.mp4 --words w1-w5 | jq '.added[0].duration, .added[0].id'
+$SONA trim clip_1 --words w4-w11
+$SONA list | jq -r '.clips[0] | "\(.in) \(.duration)"'
 ```
 
 Checks worth asserting: the word count matches the source response (78 for
@@ -54,6 +59,12 @@ Gemini on this clip, 77 for Deepgram — they tokenize differently); ids are
   interpolated by character share, so do not expect word-accurate cuts.
 - Gemini writes `"3s"` as well as `"0.700s"`; the parser accepts both. A
   stricter parser silently drops about 13% of words.
+- `--words` pads 120 ms on each side by default; `--pad 0` cuts exactly at the
+  reported boundary, which on ASR timings often clips a phoneme.
+- `--words` on a file the index does not describe is a `usage` error that names
+  both paths. Index the file you intend to cut.
+- A word range past the end of the audio is clamped by the same rule as any
+  other trim: the reported duration matches the render, with `clip_past_media`.
 - `index_past_audio` means the transcript runs past the end of the audio —
   usually a mismatched export, not a bug in the index.
 - Piping is safe: `view | head -2` ends quietly. It used to panic with a broken

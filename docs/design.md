@@ -566,6 +566,11 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **Word-range edits.** `add`/`trim` accept `--words w12-w19`, resolving ids to
+  source times with a 120 ms pad on both sides (`--pad`). The ids exist to be
+  cut with; converting them to times by hand is exactly the arithmetic that
+  drifts. The word range must belong to the file being cut, so a mismatch is a
+  `usage` error naming both paths.
 - **`sona index` / `view` / `find`.** A word index keyed by the SHA-256 of the
   extracted 16 kHz mono audio, with stable `w1..wN` ids, read back as compact text
   lines. `view` and `find` are the documented exception to "stdout is one JSON

@@ -62,8 +62,21 @@ sona view --range 0:11-0:19                              # ~10 lines, ids for an
 
 `view` and `find` print plain text lines (`start-end  firstId-lastId  text`), not
 the JSON envelope — that is what makes them cheap; add `--json` when a caller
-needs structure. The ids (`w27`) are stable for that index, so a caption or a
-cut you write can cite one instead of re-deriving a timecode.
+needs structure.
+
+The ids (`w27`) are the handles you cut with. You never have to convert them to
+times:
+
+```bash
+sona find "good memory"              # 00:12.6-00:14.4  w27-w31  …
+sona add podcast.mp4 --words w27-w31 # cuts with 120ms of air on each side
+sona trim clip_1 --words w27-w31     # same range, applied to an existing clip
+```
+
+`--pad` controls that air: raise it when a cut clips a consonant, set `--pad 0`
+when you want the word boundary exactly as reported. Word times from ASR are
+approximate (±100ms or so), so `--pad 0` plus a tight cut is how you get a
+chopped first phoneme.
 
 ## Editing the file vs running a command
 

@@ -59,7 +59,8 @@ Creates `sona.json` and `.sona/`. Fails if the file exists.
 ## add
 
 ```
-sona add <file>... [--from <t>] [--to <t>] [--speed <n>] [--at <index>] [--fill]
+sona add <file>... [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
+                  [--speed <n>] [--at <index>] [--fill]
 ```
 
 Appends clips, or inserts them at `--at`. `--from`/`--to` are offsets **inside
@@ -69,6 +70,17 @@ the source file**, not the timeline. `--speed 1.5` shortens the clip;
 ```json
 {"ok": true, "added": [{"id": "clip_2", "source": "/media/demo.webm", "duration": "00:00:10.666"}],
  "duration": "00:00:18.906"}
+```
+
+`--words w12-w19` cuts by index ids instead of times: it resolves the range to
+source times with `--pad` (default `120ms`) on each side. `--words` replaces
+`--from`/`--to`, and requires the index to describe the file being added.
+
+```console
+$ sona find "good memory"
+00:12.6-00:14.4  w27-w31  You've got a [good memory.]
+$ sona add podcast.mp4 --words w27-w31
+{"ok": true, "added": [{"id": "clip_1", "duration": "00:02.040"}]}
 ```
 
 Notes:
@@ -96,11 +108,14 @@ sona list
 ## trim
 
 ```
-sona trim <id> [--from <t>] [--to <t>]
+sona trim <id> [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
 ```
 
 Moves the clip's source in/out points. Omitted side is left alone. `--to` must be
 after `--from`.
+
+`--words w12-w19` sets both points from the index, padding each side by `--pad`
+(default `120ms`). The clip's source must be the file the index describes.
 
 ## speed
 
