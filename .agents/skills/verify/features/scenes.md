@@ -11,11 +11,11 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA index --from t.srt --audio shots.mp4
-$SONA scenes
+$SPLICE index --from t.srt --audio shots.mp4
+$SPLICE scenes
 00:00.0-00:02.0  key 00:00.2  scene 1
 00:02.0-00:04.0  key 00:02.2  scene 2
-$SONA scenes --json | jq '.cached, (.scenes | length)'
+$SPLICE scenes --json | jq '.cached, (.scenes | length)'
 ```
 
 ## Driving it with bash + JSON
@@ -32,9 +32,9 @@ ffmpeg -hide_banner -loglevel error -y \
   -map "[v]" -map 3:a -c:v libx264 -pix_fmt yuv420p -c:a aac shots.mp4
 
 printf '1\n00:00:00,000 --> 00:00:06,000\nsix seconds.\n' > t.srt
-$SONA init --size 320x240 --fps 25
-$SONA index --from t.srt --audio shots.mp4
-$SONA scenes | wc -l          # 3
+$SPLICE init --size 320x240 --fps 25
+$SPLICE index --from t.srt --audio shots.mp4
+$SPLICE scenes | wc -l          # 3
 ```
 
 A 0.2s flash between two shots is the merge test: default `--min 500ms` absorbs

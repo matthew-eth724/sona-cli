@@ -35,7 +35,7 @@ pub struct Scene {
 
 /// Scene detection is a property of the *picture*, not of the audio the index
 /// is keyed by, so the stat of the source it ran against is stored beside it.
-/// Change the file and the next `sona scenes` detects again.
+/// Change the file and the next `splice scenes` detects again.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scenes {
     pub source_stat: String,
@@ -89,7 +89,7 @@ impl Index {
 
     pub fn load(path: &Path) -> Result<Index> {
         let raw = std::fs::read_to_string(path)
-            .with_context(|| format!("no index at {} (run `sona index`)", path.display()))?;
+            .with_context(|| format!("no index at {} (run `splice index`)", path.display()))?;
         let index: Index = serde_json::from_str(&raw)
             .with_context(|| format!("{} is not a valid index", path.display()))?;
         if index.version != VERSION {
@@ -234,7 +234,7 @@ pub fn span_for(idx: &Index, first: usize, last: usize, pad: Time) -> Result<(Ti
     Ok((start, end))
 }
 
-/// Filler words removed by `sona cut --fillers`. Deliberately conservative:
+/// Filler words removed by `splice cut --fillers`. Deliberately conservative:
 /// deleting "like" or "actually" because a model guessed is worse than leaving
 /// an "um" in.
 pub const FILLERS: &[&str] = &[

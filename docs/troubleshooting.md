@@ -1,10 +1,10 @@
 # Troubleshooting
 
-Start with `sona doctor`, then `sona inspect`. Between them they explain most
+Start with `splice doctor`, then `splice inspect`. Between them they explain most
 failures without spawning a render.
 
 ```console
-$ sona doctor
+$ splice doctor
 {"encoders":{"libx264":true},"ffmpeg":"ffmpeg version 7.1.5 …",
  "filters":{"drawtext":true,"libass":true},
  "font":"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","ok":true}
@@ -14,14 +14,14 @@ $ sona doctor
 
 | code | exit | cause | fix |
 | --- | --- | --- | --- |
-| `project_invalid` | 2 | `sona.json` unparseable, wrong `version`, zero canvas, `speed <= 0`, `src_out < src_in` | the message names the field; fix the file or re-run the edit |
-| `media_missing` | 3 | a source path does not exist | `sona add <correct path>`; sources are canonicalized at add time |
+| `project_invalid` | 2 | `splice.json` unparseable, wrong `version`, zero canvas, `speed <= 0`, `src_out < src_in` | the message names the field; fix the file or re-run the edit |
+| `media_missing` | 3 | a source path does not exist | `splice add <correct path>`; sources are canonicalized at add time |
 | `unreadable` | 3 | ffprobe cannot demux the file | re-encode the source, or check it is really a video |
-| `ffmpeg_failed` | 4 | one render step failed | `sona plan`, find that step, read its argv |
-| `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `sona <cmd> --help` |
-| `usage: no clip` | 5 | the id is not in the timeline | `sona list` |
-| `no_history` | 2 | nothing left to undo, or `.sona/history/` was deleted | `sona history` |
-| `no_index` | 2 | `view`/`find` ran without an index, or `.sona/index/` was deleted | `sona index --from <transcript>` |
+| `ffmpeg_failed` | 4 | one render step failed | `splice plan`, find that step, read its argv |
+| `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |
+| `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
+| `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
+| `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
 | `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
 
 ## Warnings
@@ -41,18 +41,18 @@ created them, and in `inspect`.
 ## Symptoms
 
 **Render reports `ran: 0` after an edit.** The step's cache key did not move,
-which means the output on disk does not reflect your change. Delete `.sona/cache`
+which means the output on disk does not reflect your change. Delete `.splice/cache`
 for a correct render and report it: the key must cover the step's own argv.
 
 **Render "succeeds" in 0 steps but the output is broken or silent.** A stale or
-zero-byte cache entry. `ls -la .sona/cache`, then `rm -rf .sona/cache` and re-render.
+zero-byte cache entry. `ls -la .splice/cache`, then `rm -rf .splice/cache` and re-render.
 
 **Text does not appear.** Three causes, in order of likelihood: `doctor` shows
 `font: null`; the overlay window is outside the timeline; `--pos` puts it under
-the burned caption band. Check `sona plan` for a `drawtext` in the decorate step.
+the burned caption band. Check `splice plan` for a `drawtext` in the decorate step.
 
 **Captions do not appear.** The SRT path moved after `caption` was run, or the
-cues are outside the timeline. `sona caption <file.srt>` again to re-parse and
+cues are outside the timeline. `splice caption <file.srt>` again to re-parse and
 re-see the cue count.
 
 **Audio is silent after adding a music bed.** `amix` ends with the *first* input,
@@ -60,11 +60,11 @@ which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
 **`composite_not_built`.** The project has more than one layer, or a layer with
-camera keys. Those are designed and not implemented. `sona undo` goes back; the
+camera keys. Those are designed and not implemented. `splice undo` goes back; the
 document itself is valid, it just cannot be rendered yet.
 
 **`no layer at z = 0`.** A hand edit removed or moved the base layer. The layer at
-z = 0 carries the program audio and must fill the canvas; `sona undo` restores it.
+z = 0 carries the program audio and must fill the canvas; `splice undo` restores it.
 
 **Loudness lands a dB or two off target.** One-pass `loudnorm` applies gain
 dynamically, so a program with long quiet and loud sections can miss the target
@@ -74,20 +74,20 @@ is cheap.
 
 **A loudness render re-runs the whole assembly.** It should not: the loudness step
 is appended after the existing ones. If `ran` equals `total`, something upstream
-changed too — check `sona plan --loudnorm`.
+changed too — check `splice plan --loudnorm`.
 
 **Ducking is off by a few seconds.** The spans are mapped through the clips at the
-moment you run `sona duck`. Re-cut the timeline and they go stale; `duck_stale`
-says so and `sona duck` re-maps them. If a clip is not cut from the indexed file,
+moment you run `splice duck`. Re-cut the timeline and they go stale; `duck_stale`
+says so and `splice duck` re-maps them. If a clip is not cut from the indexed file,
 `duck` refuses rather than guessing.
 
 **The bed ducks where nobody speaks.** The transcript and the picture disagree —
-usually an index built from one export and a clip from another. `sona view
+usually an index built from one export and a clip from another. `splice view
 --range` shows the word times `duck` is using.
 
 **The program got shorter after adding a transition.** Correct: the transition
 overlaps the two clips, so `duration` drops by the transition length. Check with
-`sona list`.
+`splice list`.
 
 **`transition_too_long`.** The fade is longer than one of the clips it joins.
 `fix` names a duration that fits.
@@ -119,12 +119,12 @@ timed against the old timeline moved. `cut_shifts_layers` warned about it. Recut
 captions after the edit, not before.
 
 **`frames` says nothing rendered, but you rendered.** Preview and final keep
-separate caches. `sona frames --preview` reads the proxy; without the flag it
+separate caches. `splice frames --preview` reads the proxy; without the flag it
 wants the final render. Run the matching `render` first.
 
-**The project is unreadable and nothing opens.** `sona undo`. It restores the
+**The project is unreadable and nothing opens.** `splice undo`. It restores the
 last snapshot without parsing the broken file. If that fails, the previous
-document is still at `.sona/history/<seq>.json` under the `project` key.
+document is still at `.splice/history/<seq>.json` under the `project` key.
 
 **`find` returns nothing but you can see the words.** Matching ignores case and
 punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and
@@ -134,7 +134,7 @@ distinct word instead.
 **Index times do not line up with the video.** The index describes the audio
 file, in that file's time. If you indexed the original recording and are cutting
 a clip of it, source time is what `add --from/--to` wants, so they agree; if you
-indexed a different export, they do not. `sona index` warns `index_past_audio`
+indexed a different export, they do not. `splice index` warns `index_past_audio`
 when the transcript runs past the end of the audio, which catches the common
 version-skew mistake.
 
@@ -158,10 +158,10 @@ assemble pass re-encodes. A 36-second 1080x1920 clip takes about 13 seconds at
 `crf 16` on 4 vCPUs. Re-renders reuse everything unaffected by the edit, so a
 single overlay change is one step, not four.
 
-**Disk filling up.** `.sona/cache/` keeps one intermediate per step ever rendered
+**Disk filling up.** `.splice/cache/` keeps one intermediate per step ever rendered
 for this project. It is safe to delete at any time.
 
 ## Still stuck
 
-`sona plan` is the ground truth: it shows exactly what would run. Compare the step
+`splice plan` is the ground truth: it shows exactly what would run. Compare the step
 you expect with the step that exists, and the bug is usually visible in the argv.

@@ -49,7 +49,7 @@ jobs:
       - name: stage
         shell: bash
         run: |
-          bin="target/${{ matrix.target }}/release/sona"
+          bin="target/${{ matrix.target }}/release/splice"
           [ "${{ matrix.key }}" = "win32-x64" ] && bin="$bin.exe"
           node npm/stage.mjs "${{ matrix.key }}" "$bin"
       - uses: actions/setup-node@v4
@@ -61,7 +61,7 @@ jobs:
         # macOS leaves npm-installed binaries unsigned; npm does not set the
         # quarantine bit, so they run. This step is what proves it per runner.
         run: |
-          bin=$(ls npm/out/*/bin/sona* | head -1)
+          bin=$(ls npm/out/*/bin/splice* | head -1)
           "$bin" --version
       - name: publish the platform package
         shell: bash

@@ -1,4 +1,4 @@
-//! sona — a video editing CLI for agents.
+//! splice — a video editing CLI for agents.
 mod audio;
 mod cache;
 mod caption;

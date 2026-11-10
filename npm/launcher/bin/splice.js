@@ -11,11 +11,11 @@ const path = require("node:path");
 // Linux ships a static (musl) binary, so one artifact covers glibc and musl
 // distros and there is no libc field to fight with.
 const TARGETS = {
-  "linux-x64": "sona-linux-x64",
-  "linux-arm64": "sona-linux-arm64",
-  "darwin-x64": "sona-darwin-x64",
-  "darwin-arm64": "sona-darwin-arm64",
-  "win32-x64": "sona-win32-x64",
+  "linux-x64": "splice-cli-linux-x64",
+  "linux-arm64": "splice-cli-linux-arm64",
+  "darwin-x64": "splice-cli-darwin-x64",
+  "darwin-arm64": "splice-cli-darwin-arm64",
+  "win32-x64": "splice-cli-win32-x64",
 };
 
 function target() {
@@ -23,15 +23,15 @@ function target() {
   const pkg = TARGETS[key];
   if (!pkg) {
     fail(
-      `sona does not ship a binary for ${key}`,
+      `splice does not ship a binary for ${key}`,
       "supported: " + Object.keys(TARGETS).join(", ")
     );
   }
-  return `@matthew-eth724/${pkg}`;
+  return pkg;
 }
 
 function fail(message, hint) {
-  process.stderr.write(`sona: ${message}\n`);
+  process.stderr.write(`splice: ${message}\n`);
   if (hint) process.stderr.write(`  ${hint}\n`);
   process.exit(1);
 }
@@ -42,18 +42,18 @@ try {
 } catch {
   fail(
     `the platform package ${target()} is not installed`,
-    "reinstall without --no-optional, or set SONA_BINARY to a binary you built yourself"
+    "reinstall without --no-optional, or set SPLICE_BINARY to a binary you built yourself"
   );
 }
 
-const exe = process.platform === "win32" ? "sona.exe" : "sona";
+const exe = process.platform === "win32" ? "splice.exe" : "splice";
 const binary =
-  process.env.SONA_BINARY || path.join(path.dirname(pkgPath), "bin", exe);
+  process.env.SPLICE_BINARY || path.join(path.dirname(pkgPath), "bin", exe);
 
 const result = spawnSync(binary, process.argv.slice(2), { stdio: "inherit" });
 if (result.error) {
   if (result.error.code === "ENOENT") {
-    fail(`cannot execute ${binary}`, "set SONA_BINARY to an absolute path");
+    fail(`cannot execute ${binary}`, "set SPLICE_BINARY to an absolute path");
   }
   fail(result.error.message);
 }

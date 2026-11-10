@@ -272,7 +272,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sona-cli"
+name = "splice-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",

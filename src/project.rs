@@ -36,7 +36,7 @@ pub struct Tracks {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub captions: Option<Captions>,
     /// Which word index this project is reading. The index itself lives in
-    /// `.sona/index/<audio_hash>.json`; this is only the pointer.
+    /// `.splice/index/<audio_hash>.json`; this is only the pointer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<IndexRef>,
 }
@@ -247,7 +247,7 @@ pub struct Duck {
     /// Fade in and out over this long, so the gain does not step.
     #[serde(default = "default_ramp")]
     pub ramp: Time,
-    /// Speech spans already mapped to timeline time. Resolved when `sona duck`
+    /// Speech spans already mapped to timeline time. Resolved when `splice duck`
     /// runs, so a render never needs the index.
     #[serde(default)]
     pub spans: Vec<TimeRange>,
@@ -613,7 +613,7 @@ impl Project {
                                         c.source, m.duration, c.id, end
                                     ),
                                 )
-                                .with_fix(format!("sona trim {} --to {}", c.id, m.duration)),
+                                .with_fix(format!("splice trim {} --to {}", c.id, m.duration)),
                             );
                         }
                     }
@@ -624,7 +624,7 @@ impl Project {
                                 at.clone(),
                                 format!("{} has no video stream", c.source),
                             )
-                            .with_fix(format!("sona rm {}", c.id)),
+                            .with_fix(format!("splice rm {}", c.id)),
                         );
                     }
                 }
@@ -634,7 +634,7 @@ impl Project {
                         format!("{at}.source"),
                         format!("{e}"),
                     )
-                    .with_fix(format!("sona rm {}   (or put the file back)", c.id)),
+                    .with_fix(format!("splice rm {}   (or put the file back)", c.id)),
                 ),
             }
             }
@@ -659,7 +659,7 @@ impl Project {
                             ),
                         )
                         .with_fix(format!(
-                            "sona transition {} --duration {}",
+                            "splice transition {} --duration {}",
                             c.id,
                             Time::from_micros((shorter.micros() / 2).max(1))
                         )),
@@ -679,7 +679,7 @@ impl Project {
                             "tracks.audio.duck",
                             "the timeline moved since the duck spans were mapped",
                         )
-                        .with_fix("sona duck"),
+                        .with_fix("splice duck"),
                     );
                 }
             }
@@ -692,7 +692,7 @@ impl Project {
                         "tracks.captions.source",
                         format!("{} does not exist", caps.source),
                     )
-                    .with_fix("sona rm captions   (or put the file back)"),
+                    .with_fix("splice rm captions   (or put the file back)"),
                 );
             }
         }
@@ -713,7 +713,7 @@ impl Project {
                             placed
                         ),
                     )
-                    .with_fix(format!("sona rm {}", o.id())),
+                    .with_fix(format!("splice rm {}", o.id())),
                 );
             }
         }
@@ -726,7 +726,7 @@ impl Project {
                             format!("tracks.overlays[{i}].source"),
                             format!("{} does not exist", img.source),
                         )
-                        .with_fix(format!("sona rm {}", img.id)),
+                        .with_fix(format!("splice rm {}", img.id)),
                     );
                 }
                 if img.width <= 0.0 || img.width > 1.0 {
@@ -736,7 +736,7 @@ impl Project {
                             format!("tracks.overlays[{i}].width"),
                             format!("width {} is not between 0 and 1 of the canvas", img.width),
                         )
-                        .with_fix(format!("sona image {} --width 320", img.source)),
+                        .with_fix(format!("splice image {} --width 320", img.source)),
                     );
                 }
             }
@@ -830,7 +830,7 @@ fn upgrade_v1(old: LegacyV1) -> Project {
     }
 }
 
-/// Owns `sona.json`. Every command opens, mutates, saves through this.
+/// Owns `splice.json`. Every command opens, mutates, saves through this.
 pub struct Store {
     pub path: PathBuf,
     pub project: Project,
@@ -852,7 +852,7 @@ impl Store {
 
     pub fn open(path: &Path) -> Result<Store> {
         let raw = fs::read_to_string(path)
-            .with_context(|| format!("no project at {} (run `sona init`)", path.display()))?;
+            .with_context(|| format!("no project at {} (run `splice init`)", path.display()))?;
         let value: serde_json::Value = serde_json::from_str(&raw)
             .with_context(|| format!("{} is not valid JSON", path.display()))?;
         let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
@@ -879,7 +879,7 @@ impl Store {
     }
 
     pub fn cache_dir(&self) -> PathBuf {
-        self.dir().join(".sona").join("cache")
+        self.dir().join(".splice").join("cache")
     }
 
     pub fn resolve(&self, rel: &str) -> PathBuf {
@@ -911,10 +911,10 @@ mod tests {
     fn a_version_1_document_upgrades_to_one_main_layer() {
         let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/plans/v1-project.json");
-        let dir = std::env::temp_dir().join(format!("sona-up-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("splice-up-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("sona.json");
+        let path = dir.join("splice.json");
         std::fs::copy(&fixture, &path).unwrap();
 
         let store = Store::open(&path).unwrap();
@@ -953,7 +953,7 @@ mod tests {
         let d = diags.iter().find(|d| d.code == "media_missing").expect("a warning");
         assert_eq!(
             d.fix.as_deref(),
-            Some("sona rm clip_1   (or put the file back)")
+            Some("splice rm clip_1   (or put the file back)")
         );
     }
 
@@ -983,7 +983,7 @@ mod tests {
         let mut media = MediaIndex::default();
         let diags = p.diagnose(&mut media);
         let d = diags.iter().find(|d| d.code == "text_past_end").expect("a warning");
-        assert_eq!(d.fix.as_deref(), Some("sona rm text_1"));
+        assert_eq!(d.fix.as_deref(), Some("splice rm text_1"));
     }
 
     fn clip_with(id: &str, out: f64, transition: Option<Transition>) -> Clip {
@@ -1160,7 +1160,7 @@ mod tests {
             .into_iter()
             .find(|d| d.code == "transition_too_long")
             .expect("a warning");
-        assert_eq!(d.fix.as_deref(), Some("sona transition clip_2 --duration 00:00:00.500"));
+        assert_eq!(d.fix.as_deref(), Some("splice transition clip_2 --duration 00:00:00.500"));
     }
 
     #[test]

@@ -212,7 +212,7 @@ pub fn duck_expression(spans: &[(Time, Time)], db: f32, ramp: Time) -> Option<St
 /// program.
 ///
 /// One-pass `loudnorm` is deliberately chosen: it keeps every step's argv
-/// knowable at plan time, which is what `sona plan` promises. A two-pass
+/// knowable at plan time, which is what `splice plan` promises. A two-pass
 /// measurement would make the apply step's argv depend on a run, and the plan
 /// would stop being a plan.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -281,7 +281,7 @@ pub fn plan(
         .main_layer()
         .filter(|l| !l.clips.is_empty())
         .cloned()
-        .ok_or_else(|| anyhow::anyhow!("project has no clips (run `sona add <file>`)"))?;
+        .ok_or_else(|| anyhow::anyhow!("project has no clips (run `splice add <file>`)"))?;
     if layer.motion.is_some() {
         bail!("composite_not_built: camera keyframes are designed and not implemented (docs/design-compositing.md)");
     }
@@ -304,7 +304,7 @@ pub fn plan(
                     format!("clip {}", clip.id),
                     format!("{} contributes no duration", clip.id),
                 )
-                .with_fix(format!("sona rm {}", clip.id)),
+                .with_fix(format!("splice rm {}", clip.id)),
             );
             continue;
         }
@@ -780,7 +780,7 @@ fn concat_line(path: &Path) -> String {
     format!("file '{s}'")
 }
 
-/// What `sona plan` prints. The agent-facing debugging lever.
+/// What `splice plan` prints. The agent-facing debugging lever.
 pub fn plan_json(plan: &RenderPlan, profile: Profile) -> serde_json::Value {
     let steps: Vec<serde_json::Value> = plan
         .steps

@@ -1,5 +1,5 @@
 {
-  "name": "@matthew-eth724/sona",
+  "name": "splice-cli",
   "version": "0.1.0",
   "description": "A video editing CLI for AI agents: one JSON document in, ffmpeg out. Requires ffmpeg on PATH.",
   "keywords": [
@@ -13,24 +13,24 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/matthew-eth724/sona-cli.git"
+    "url": "git+https://github.com/matthew-eth724/splice-cli.git"
   },
-  "homepage": "https://github.com/matthew-eth724/sona-cli#readme",
+  "homepage": "https://github.com/matthew-eth724/splice-cli#readme",
   "bin": {
-    "sona": "bin/sona.js"
+    "splice": "bin/splice.js"
   },
   "files": [
-    "bin/sona.js",
+    "bin/splice.js",
     "README.md"
   ],
   "engines": {
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@matthew-eth724/sona-linux-x64": "0.1.0",
-    "@matthew-eth724/sona-linux-arm64": "0.1.0",
-    "@matthew-eth724/sona-darwin-x64": "0.1.0",
-    "@matthew-eth724/sona-darwin-arm64": "0.1.0",
-    "@matthew-eth724/sona-win32-x64": "0.1.0"
+    "splice-cli-linux-x64": "0.1.0",
+    "splice-cli-linux-arm64": "0.1.0",
+    "splice-cli-darwin-x64": "0.1.0",
+    "splice-cli-darwin-arm64": "0.1.0",
+    "splice-cli-win32-x64": "0.1.0"
   }
 }

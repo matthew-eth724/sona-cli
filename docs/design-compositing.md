@@ -5,7 +5,7 @@ shape, so it should land once nothing else is moving.
 
 ## Problem
 
-`sona` has one video layer. `tracks.video` is an ordered list, and its order *is*
+`splice` has one video layer. `tracks.video` is an ordered list, and its order *is*
 the timeline. Everything downstream leans on that: duration is a sum, cache keys
 are per clip, index word times map through one list, `duck` freezes spans against
 a layout fingerprint. Picture-in-picture needs a second simultaneous picture;
@@ -25,11 +25,11 @@ Written first; the types below are derived from it.
 ### Picture-in-picture
 
 ```console
-$ sona init --size 1920x1080 --fps 30
-$ sona add background.mp4                       # the main layer, z = 0
-$ sona layer add pip --z 10 --place 0.72,0.72,0.25 --start 4s
-$ sona add demo.mp4 --layer pip --from 10s --to 24s
-$ sona render -o out.mp4
+$ splice init --size 1920x1080 --fps 30
+$ splice add background.mp4                       # the main layer, z = 0
+$ splice layer add pip --z 10 --place 0.72,0.72,0.25 --start 4s
+$ splice add demo.mp4 --layer pip --from 10s --to 24s
+$ splice render -o out.mp4
 ```
 
 `--place x,y,size` is a fraction of the canvas: top-left at 72%, 25% wide. Layer
@@ -38,9 +38,9 @@ $ sona render -o out.mp4
 ### Background plate under the cut
 
 ```console
-$ sona layer add plate --z -10                  # negative z is simply below
-$ sona add loop.mov --layer plate
-$ sona render -o out.mp4
+$ splice layer add plate --z -10                  # negative z is simply below
+$ splice add loop.mov --layer plate
+$ splice render -o out.mp4
 ```
 
 No new concept: a plate is a layer that happens to be under everything.
@@ -48,13 +48,13 @@ No new concept: a plate is a layer that happens to be under everything.
 ### Zoom and pan
 
 ```console
-$ sona key main --t 0    --zoom 1.0 --at 0.50,0.50
-$ sona key main --t 2.5s --zoom 1.6 --at 0.55,0.48
-$ sona key main --t 6s   --zoom 2.2 --at 0.72,0.40
+$ splice key main --t 0    --zoom 1.0 --at 0.50,0.50
+$ splice key main --t 2.5s --zoom 1.6 --at 0.55,0.48
+$ splice key main --t 6s   --zoom 2.2 --at 0.72,0.40
 {"ok":true,"layer":"main","keys":3,"span":"0.000000..6.000000",
  "invalidated":{"composite":1},"duration":"00:00:12.000"}
 
-$ sona key main --list
+$ splice key main --list
 t=0.000000  zoom=1.000  at=0.500,0.500
 t=2.500000  zoom=1.600  at=0.550,0.480
 t=6.000000  zoom=2.200  at=0.720,0.400
@@ -67,11 +67,11 @@ because a keyframe moved.**
 ### What an agent does when it is wrong
 
 ```console
-$ sona key main --t 99s --zoom 0.5
+$ splice key main --t 99s --zoom 0.5
 {"ok":false,"error":{"code":"bad_key","message":"zoom must be >= 1.0",
- "fix":"sona key main --t 99s --zoom 1.0"}}
+ "fix":"splice key main --t 99s --zoom 1.0"}}
 
-$ sona rm pip
+$ splice rm pip
 {"ok":true,"changed":["pip"],"duration":"00:00:18.906"}
 ```
 

@@ -1,7 +1,7 @@
-//! Snapshots of `sona.json`, so a wrong edit is one command away from gone.
+//! Snapshots of `splice.json`, so a wrong edit is one command away from gone.
 //!
 //! The document is a single small file, which makes this cheap: before a
-//! mutation writes, the previous version is copied into `.sona/history/`. Undo
+//! mutation writes, the previous version is copied into `.splice/history/`. Undo
 //! restores it byte for byte and drops the entry, so repeated undo walks back
 //! through the session.
 use anyhow::{Context, Result};
@@ -64,7 +64,7 @@ pub fn dir(project: &Path) -> PathBuf {
     project
         .parent()
         .unwrap_or(Path::new("."))
-        .join(".sona")
+        .join(".splice")
         .join("history")
 }
 
@@ -144,7 +144,7 @@ pub fn list(project: &Path) -> Result<Vec<Entry>> {
 /// would restore an identical document (a no-op mutation, or a command that
 /// failed after its snapshot) are consumed and skipped.
 ///
-/// Deliberately does not open the store: undo has to work when `sona.json` is
+/// Deliberately does not open the store: undo has to work when `splice.json` is
 /// the thing that got broken.
 pub fn undo(project: &Path) -> Result<Option<Entry>> {
     let current = std::fs::read_to_string(project).unwrap_or_default();
@@ -180,13 +180,13 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static N: AtomicU64 = AtomicU64::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "sona-hist-{}-{}",
+            "splice-hist-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::SeqCst)
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let store = Store::create(&dir.join("sona.json"), 320, 240, Rational::new(30, 1)).unwrap();
+        let store = Store::create(&dir.join("splice.json"), 320, 240, Rational::new(30, 1)).unwrap();
         (dir, store)
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deterministic fixtures for driving `sona`. Usage: make-media.sh <target-dir>
+# Deterministic fixtures for driving `splice`. Usage: make-media.sh <target-dir>
 set -euo pipefail
 DIR="${1:?usage: make-media.sh <target-dir>}"
 mkdir -p "$DIR"

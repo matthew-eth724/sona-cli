@@ -2,11 +2,11 @@
 /target
 
 # project state and render cache (never authoritative)
-/.sona
+/.splice
 /demo
 
 # local media and proof artefacts: inputs and evidence stay out of the repo.
-# `sona` and the verify skill generate their own fixtures with ffmpeg.
+# `splice` and the verify skill generate their own fixtures with ffmpeg.
 /resource
 /verification
 

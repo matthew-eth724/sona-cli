@@ -1,6 +1,6 @@
 # The project file
 
-`sona.json` holds the whole edit. It is the only state: `.sona/` is cache, and
+`splice.json` holds the whole edit. It is the only state: `.splice/` is cache, and
 deleting it costs a re-render, never information.
 
 The file is meant to be both machine-written (by the CLI) and hand-edited (by an
@@ -93,7 +93,7 @@ The layer at `z: 0` must fill the canvas (`place` of `{0,0,1}`): a base layer wi
 a hole is a bug, not a look.
 
 **Multi-layer projects and `motion` do not render yet.** They validate and save,
-and `sona render` refuses with `composite_not_built` rather than producing a
+and `splice render` refuses with `composite_not_built` rather than producing a
 render that silently ignores the extra layers. The design is
 [design-compositing.md](design-compositing.md).
 
@@ -139,7 +139,7 @@ One optional music bed, mixed under the clips and ended by them.
 | `gain_db` | f32 | `0.0` |
 | `duck` | object | omitted when not ducking |
 
-`duck` is written by `sona duck`:
+`duck` is written by `splice duck`:
 
 | field | type | notes |
 | --- | --- | --- |
@@ -149,7 +149,7 @@ One optional music bed, mixed under the clips and ended by them.
 | `layout` | string | fingerprint of the cut these spans were mapped against |
 
 `layout` is what makes staleness detectable: if the clips move, `diagnose` reports
-`duck_stale` and the fix is to run `sona duck` again. Spans are timeline time, so
+`duck_stale` and the fix is to run `splice duck` again. Spans are timeline time, so
 a render never needs the index.
 
 ## tracks.overlays
@@ -182,7 +182,7 @@ A tagged array; the tag is `kind`.
 ## tracks.index
 
 A pointer to the word index this project reads. The words themselves live in
-`.sona/index/<audio_hash>.json`; the project only records which one is current.
+`.splice/index/<audio_hash>.json`; the project only records which one is current.
 
 | field | type | notes |
 | --- | --- | --- |
@@ -194,8 +194,8 @@ A pointer to the word index this project reads. The words themselves live in
 | `words` | number | count, for a cheap sanity check |
 | `approximate` | bool | omitted when false; true when timings were interpolated from SRT |
 
-Deleting `.sona/index/` leaves this pointer dangling, and `view`/`find` will say
-`no_index` until `sona index` runs again.
+Deleting `.splice/index/` leaves this pointer dangling, and `view`/`find` will say
+`no_index` until `splice index` runs again.
 
 ## tracks.captions
 
@@ -233,5 +233,5 @@ Credentials. `GEMINI_API_KEY` and `DEEPGRAM_API_KEY` are read from the
 environment only. A project file gets committed, shared and pasted into
 transcripts; secrets do not belong in it.
 
-Rendered output paths. The render target is a flag (`sona render -o`), not project
+Rendered output paths. The render target is a flag (`splice render -o`), not project
 state, so the same project can produce a preview and a master without an edit.

@@ -29,7 +29,7 @@ pub fn fingerprint(store: &Store, source: &Path) -> Result<Fingerprint> {
     }
     let stat = crate::cache::stat_token(source);
     let key = crate::cache::hash(&[stat, "audio16k".into()]);
-    let wav = store.dir().join(".sona").join("audio").join(format!("{key}.wav"));
+    let wav = store.dir().join(".splice").join("audio").join(format!("{key}.wav"));
 
     if !wav.exists() {
         if let Some(parent) = wav.parent() {

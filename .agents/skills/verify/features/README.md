@@ -1,6 +1,6 @@
 # Feature map
 
-The user-facing surface of `sona`, one file per feature. Each file says what it
+The user-facing surface of `splice`, one file per feature. Each file says what it
 is, how a person reaches it, how to drive it, and what observable end state
 proves it works. Drive the real command; never assert on an internal function.
 

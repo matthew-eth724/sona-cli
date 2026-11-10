@@ -10,23 +10,23 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA add red.mp4; $SONA add green.mp4; $SONA add blue.mp4
-$SONA transition clip_2 --kind crossfade --duration 600ms
-$SONA transition clip_3 --kind dip_to_black --duration 600ms
-$SONA list | jq -r '.duration'      # 00:00:07.800 from 3x3s clips
+$SPLICE add red.mp4; $SPLICE add green.mp4; $SPLICE add blue.mp4
+$SPLICE transition clip_2 --kind crossfade --duration 600ms
+$SPLICE transition clip_3 --kind dip_to_black --duration 600ms
+$SPLICE list | jq -r '.duration'      # 00:00:07.800 from 3x3s clips
 ```
 
 ## Driving it with bash + pixels
 
 ```bash
-$SONA render -o out.mp4
+$SPLICE render -o out.mp4
 # sample the middle of the transition and check the colour
 ffmpeg -hide_banner -loglevel error -ss 2.7 -i out.mp4 -frames:v 1 \
   -vf scale=1:1 -f rawvideo -pix_fmt rgb24 - | od -An -tu1
 # red 255,0,0 -> green 0,128,0 shows a blend: 119,69,0
 ```
 
-`sona plan` shows the offsets, which is the part worth checking:
+`splice plan` shows the offsets, which is the part worth checking:
 
 ```text
 [0:v][1:v]xfade=transition=fade:duration=0.600000:offset=2.400000[x1]

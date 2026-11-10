@@ -11,9 +11,9 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA index --from transcript.json --audio podcast.mp4
-$SONA view --range 0:11-0:19
-$SONA find "good memory"
+$SPLICE index --from transcript.json --audio podcast.mp4
+$SPLICE view --range 0:11-0:19
+$SPLICE find "good memory"
 ```
 
 ## Driving it with bash + JSON
@@ -24,22 +24,22 @@ Fixtures are committed, so no network and no ASR needed:
 cp <repo>/resource/audio1.mp3 .                      # 31s mono, 78 words
 cp <repo>/tests/fixtures/asr/gemini-verbatim.json .
 
-$SONA init >/dev/null
-$SONA index --from gemini-verbatim.json --audio audio1.mp3 | jq '.words, .cached'
+$SPLICE init >/dev/null
+$SPLICE index --from gemini-verbatim.json --audio audio1.mp3 | jq '.words, .cached'
 # 78, false
-$SONA index --from gemini-verbatim.json | jq '.cached'
+$SPLICE index --from gemini-verbatim.json | jq '.cached'
 # true  (same audio hash, same transcript -> cached)
 
-$SONA view --range 0:05-0:15
+$SPLICE view --range 0:05-0:15
 # 00:13.1-00:14.1  w27-w31  You've got a good memory.
 
-$SONA find "good memory"
+$SPLICE find "good memory"
 # 00:12.6-00:14.4  w27-w31  You've got a [good memory.]
 
 # word ids are the cut handles
-$SONA add clip-a.mp4 --words w1-w5 | jq '.added[0].duration, .added[0].id'
-$SONA trim clip_1 --words w4-w11
-$SONA list | jq -r '.clips[0] | "\(.in) \(.duration)"'
+$SPLICE add clip-a.mp4 --words w1-w5 | jq '.added[0].duration, .added[0].id'
+$SPLICE trim clip_1 --words w4-w11
+$SPLICE list | jq -r '.clips[0] | "\(.in) \(.duration)"'
 ```
 
 Checks worth asserting: the word count matches the source response (78 for
@@ -69,5 +69,5 @@ Gemini on this clip, 77 for Deepgram — they tokenize differently); ids are
   usually a mismatched export, not a bug in the index.
 - Piping is safe: `view | head -2` ends quietly. It used to panic with a broken
   pipe, which broke every `| head` and `| jq` pipeline in this repo.
-- The extracted audio lives in `.sona/audio/` and the index in `.sona/index/`.
+- The extracted audio lives in `.splice/audio/` and the index in `.splice/index/`.
   Both are cache; deleting them costs one re-index, never information.

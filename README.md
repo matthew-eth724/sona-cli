@@ -1,21 +1,21 @@
-# sona
+# splice
 
 A video editing CLI built for AI agents. Describe an edit in a small JSON
 project file, render it with ffmpeg, look at the result as PNGs.
 
 ```console
-$ sona init --size 1080x1920 --fps 30
-$ sona add intro.mp4
-$ sona add demo.webm --from 12s --to 28s --speed 1.5
-$ sona index --from transcript.json --audio podcast.mp4
-$ sona find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship faster] …
-$ sona add podcast.mp4 --words w118-w126
-$ sona cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
-$ sona scenes                                     # shot boundaries, into the index
-$ sona text "Ship faster" --from 0.5 --to 4 --pos bottom
-$ sona caption subs.srt
-$ sona render --preview                # cheap proxy, own cache
-$ sona render -o out.mp4
+$ splice init --size 1080x1920 --fps 30
+$ splice add intro.mp4
+$ splice add demo.webm --from 12s --to 28s --speed 1.5
+$ splice index --from transcript.json --audio podcast.mp4
+$ splice find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship faster] …
+$ splice add podcast.mp4 --words w118-w126
+$ splice cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
+$ splice scenes                                     # shot boundaries, into the index
+$ splice text "Ship faster" --from 0.5 --to 4 --pos bottom
+$ splice caption subs.srt
+$ splice render --preview                # cheap proxy, own cache
+$ splice render -o out.mp4
 {"duration":"00:00:42.500","ok":true,"out":"out.mp4","steps":{"ran":4,"reused":0,"total":4}}
 ```
 
@@ -30,7 +30,7 @@ An agent editing video has three handicaps a human editor does not: it pays
 tokens for everything it reads and writes, it cannot watch a timeline, and it
 debugs by reading text.
 
-So `sona` is a compiler, not a flag translator:
+So `splice` is a compiler, not a flag translator:
 
 - **The project is one diffable file.** An edit is a small `jq` or CLI change,
   not a re-described job spec.
@@ -39,19 +39,19 @@ So `sona` is a compiler, not a flag translator:
   anything is assembled.
 - **Failures are one line with a fix.** `{"error":{"code":"media_missing",
   "message":"…","fix":"…"}}`, not a 200-line stderr dump.
-- **`sona plan` shows the exact ffmpeg argv**, so a wrong render is debuggable in
+- **`splice plan` shows the exact ffmpeg argv**, so a wrong render is debuggable in
   seconds without reading vendor docs.
-- **`sona frames` gives the agent eyes** — stills and contact sheets sized for a
+- **`splice frames` gives the agent eyes** — stills and contact sheets sized for a
   vision model.
-- **`sona render --preview` makes looking cheap.** A 480x854 proxy with its own
+- **`splice render --preview` makes looking cheap.** A 480x854 proxy with its own
   cache keys: 1.6 s against 7.1 s for the same 20-second clip, and switching
   back to final costs nothing.
 - **`--dry-run` on every mutation** reports the resulting duration and warnings
   while writing nothing, so a risky edit costs one round trip, not a rollback.
-- **`sona undo` exists because agents make mistakes.** Every mutation snapshots
-  `sona.json` first, and undo restores it without parsing the file, so a
+- **`splice undo` exists because agents make mistakes.** Every mutation snapshots
+  `splice.json` first, and undo restores it without parsing the file, so a
   corrupted project is one command from fixed.
-- **`sona view` and `sona find` make reading cheap.** An indexed transcript
+- **`splice view` and `splice find` make reading cheap.** An indexed transcript
   prints as a handful of text lines with stable word ids (`w1`, `w2`, …), so
   finding a cut point costs a few hundred bytes instead of a timeline walk.
 
@@ -62,13 +62,13 @@ Requires `ffmpeg` and `ffprobe` on `PATH`, built with `libx264`, `libass`
 
 ```console
 $ cargo build --release
-$ ./target/release/sona doctor
+$ ./target/release/splice doctor
 {"encoders":{"libx264":true},"ffmpeg":"ffmpeg version 7.1.5 …",
  "filters":{"drawtext":true,"libass":true},
  "font":"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","ok":true}
 ```
 
-Either way, **ffmpeg is required and is not bundled**: `sona` shells out to
+Either way, **ffmpeg is required and is not bundled**: `splice` shells out to
 `ffmpeg`, `ffprobe` and `fc-match`, and the build must have `libx264`, `libass`
 and `freetype`. `brew install ffmpeg`, `apt install ffmpeg`, or
 `winget install Gyan.FFmpeg`. ffmpeg 7.x is what it is tested against.
@@ -113,13 +113,13 @@ past the end of the timeline, a source with no video stream.
 ## Files
 
 ```
-sona.json          the project: canvas, clips, overlays, captions
-.sona/cache/       content-addressed render steps (safe to delete)
-.sona/preview/     default output for `sona frames`
+splice.json          the project: canvas, clips, overlays, captions
+.splice/cache/       content-addressed render steps (safe to delete)
+.splice/preview/     default output for `splice frames`
 out.mp4          default render target
 ```
 
-`sona.json` is the only state. `.sona/` is pure cache; deleting it costs a re-render,
+`splice.json` is the only state. `.splice/` is pure cache; deleting it costs a re-render,
 never information.
 
 ## Documentation
@@ -127,7 +127,7 @@ never information.
 | | |
 | --- | --- |
 | [docs/cli.md](docs/cli.md) | every command, flag, JSON shape and failure |
-| [docs/project-file.md](docs/project-file.md) | `sona.json` field reference and invariants |
+| [docs/project-file.md](docs/project-file.md) | `splice.json` field reference and invariants |
 | [docs/for-agents.md](docs/for-agents.md) | how an agent should drive it |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | error code → cause → fix |
 | [docs/design.md](docs/design.md) | why it is shaped this way |

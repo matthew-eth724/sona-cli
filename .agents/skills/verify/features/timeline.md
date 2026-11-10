@@ -2,7 +2,7 @@
 
 ## Sub-features
 
-- `init` — create `sona.json` with canvas size and fps.
+- `init` — create `splice.json` with canvas size and fps.
 - `add` — append or insert a clip, optional `--from`/`--to`/`--speed`/`--at`/`--fill`.
 - `list` / `inspect` — the timeline as JSON, plus `warnings[]`.
 - `trim` — change a clip's source in/out points.
@@ -11,19 +11,19 @@
 
 ## How to get to it (user POV)
 
-Any terminal in a scratch directory. `sona` reads `sona.json` from the current
+Any terminal in a scratch directory. `splice` reads `splice.json` from the current
 directory unless `--project` is given.
 
 ## Driving it with bash + JSON
 
 ```bash
-$SONA init --size 1280x720 --fps 30
-$SONA add ./clip-a.mp4 --from 1s --to 6s        # 5s of a 6s source
-$SONA add ./clip-b.mp4 --speed 2.0              # 5s source becomes 2.5s
-$SONA list | jq '.duration, [.clips[].id]'
-$SONA move clip_2 0                             # clip_2 now first
-$SONA trim clip_1 --from 2s
-$SONA inspect | jq '.warnings'
+$SPLICE init --size 1280x720 --fps 30
+$SPLICE add ./clip-a.mp4 --from 1s --to 6s        # 5s of a 6s source
+$SPLICE add ./clip-b.mp4 --speed 2.0              # 5s source becomes 2.5s
+$SPLICE list | jq '.duration, [.clips[].id]'
+$SPLICE move clip_2 0                             # clip_2 now first
+$SPLICE trim clip_1 --from 2s
+$SPLICE inspect | jq '.warnings'
 ```
 
 ## Gotchas
@@ -36,7 +36,7 @@ $SONA inspect | jq '.warnings'
 - A project with more than one layer, or a layer with camera keys, refuses to
   render with `composite_not_built`. It validates and saves; it does not render
   by ignoring the extras.
-- `sona list` shows the `main` layer. Clip ids are unique across the document, so
+- `splice list` shows the `main` layer. Clip ids are unique across the document, so
   `trim`/`speed`/`move`/`rm` need no layer flag.
 
 - Every mutating command returns the `warnings[]` it just created, so a trim

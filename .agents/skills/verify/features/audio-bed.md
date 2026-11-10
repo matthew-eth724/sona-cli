@@ -8,20 +8,20 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA audio ./music.mp3 --gain -14      # negative needs no `--`
-$SONA render -o out.mp4
+$SPLICE audio ./music.mp3 --gain -14      # negative needs no `--`
+$SPLICE render -o out.mp4
 ```
 
 ## Driving it with bash + audio measurement
 
 ```bash
-$SONA audio ./music.mp3 --gain -14
-$SONA render -o out-full.mp4
+$SPLICE audio ./music.mp3 --gain -14
+$SPLICE render -o out-full.mp4
 python3 - <<'PY'
-import json; d=json.load(open("sona.json")); d["tracks"]["audio"]=None
-json.dump(d, open("sona-bare.json","w"))
+import json; d=json.load(open("splice.json")); d["tracks"]["audio"]=None
+json.dump(d, open("splice-bare.json","w"))
 PY
-$SONA --project sona-bare.json render -o out-bare.mp4
+$SPLICE --project splice-bare.json render -o out-bare.mp4
 ffmpeg -hide_banner -i out-full.mp4 -i out-bare.mp4 -filter_complex \
  "[0:a][1:a]amix=inputs=2:weights=1 -1:normalize=0,astats=measure_overall=RMS_level:measure_perchannel=none" \
  -f null - 2>&1 | grep 'RMS level'
@@ -31,9 +31,9 @@ ffmpeg -hide_banner -i out-full.mp4 -i out-bare.mp4 -filter_complex \
 ## Ducking
 
 ```bash
-$SONA duck --db -18          # envelope from the word index
-$SONA plan | grep -o "volume='[^']*'" | head -1
-$SONA duck --none            # back to a flat bed
+$SPLICE duck --db -18          # envelope from the word index
+$SPLICE plan | grep -o "volume='[^']*'" | head -1
+$SPLICE duck --none            # back to a flat bed
 ```
 
 Prove it with numbers, not by listening. A clip whose audio is silent makes the
@@ -58,7 +58,7 @@ and `-24.5 dB` in a gap with `--db -18`. Eighteen decibels, exactly as asked.
   only, so `--gain -14` works but `--gain=-14` also does.
 - One bed only. A second `audio` call replaces the first.
 - Duck spans are resolved when `duck` runs and stored in the project. Move the
-  cut and they are stale: `duck_stale` warns, and the fix is `sona duck`.
+  cut and they are stale: `duck_stale` warns, and the fix is `splice duck`.
 - Every clip must come from the indexed file, or `duck` refuses — there is no
   honest mapping from one recording's words onto another's timeline.
 - `--db` must be negative; the flag takes hyphen values (`--db -18`, not `-18`).

@@ -10,9 +10,9 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA text "Ship faster" --from 0.5 --to 3 --pos bottom
-$SONA image logo.png --from 1 --to 5 --pos top-right --width 120 --opacity 0.9
-$SONA render -o out.mp4
+$SPLICE text "Ship faster" --from 0.5 --to 3 --pos bottom
+$SPLICE image logo.png --from 1 --to 5 --pos top-right --width 120 --opacity 0.9
+$SPLICE render -o out.mp4
 ```
 
 ## Driving it with bash + pixels
@@ -23,8 +23,8 @@ ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=black:size=200x100:r
   -vf "drawbox=x=0:y=0:w=200:h=100:color=red@1:t=fill,drawbox=x=140:y=20:w=40:h=60:color=yellow@1:t=fill,colorkey=black:0.01:0.0" \
   -frames:v 1 logo.png
 
-$SONA image logo.png --from 1 --to 5 --pos top-right --width 120
-$SONA render -o out.mp4
+$SPLICE image logo.png --from 1 --to 5 --pos top-right --width 120
+$SPLICE render -o out.mp4
 scripts/psnr-ab.sh out.mp4 out.mp4 2 "<crop of the logo region>"   # sanity
 ```
 

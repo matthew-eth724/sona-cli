@@ -11,10 +11,10 @@
 ## How to get to it (user POV)
 
 ```bash
-$SONA index --from transcript.json --audio talk.mp4
-$SONA cut clip_1 --silences '>0.6s' --fillers --dry-run
-$SONA cut clip_1 --silences '>0.6s' --fillers
-$SONA list | jq -r '.duration, (.clips | length)'
+$SPLICE index --from transcript.json --audio talk.mp4
+$SPLICE cut clip_1 --silences '>0.6s' --fillers --dry-run
+$SPLICE cut clip_1 --silences '>0.6s' --fillers
+$SPLICE list | jq -r '.duration, (.clips | length)'
 ```
 
 ## Driving it with bash + JSON
@@ -40,12 +40,12 @@ uh
 today.
 SRT
 
-$SONA index --from f.srt --audio clip-a.mp4
-$SONA cut clip_1 --fillers --dry-run | jq '.removed, .saved'
+$SPLICE index --from f.srt --audio clip-a.mp4
+$SPLICE cut clip_1 --fillers --dry-run | jq '.removed, .saved'
 # two spans, "saved": "00:00:01.080"
 
-$SONA cut clip_1 --fillers | jq '.replaced_by, .saved'
-$SONA render -o out.mp4
+$SPLICE cut clip_1 --fillers | jq '.replaced_by, .saved'
+$SPLICE render -o out.mp4
 ```
 
 Assert: `saved` equals the sum of the removed spans; `replaced_by` has one id per

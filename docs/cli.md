@@ -1,12 +1,12 @@
 # CLI reference
 
 ```
-sona [--project <path>] <command> [options]
+splice [--project <path>] <command> [options]
 ```
 
-`--project` is global and defaults to `sona.json` in the current directory. Paths
+`--project` is global and defaults to `splice.json` in the current directory. Paths
 inside the project resolve against the project file's directory, so
-`sona --project /elsewhere/sona.json` works from any cwd.
+`splice --project /elsewhere/splice.json` works from any cwd.
 
 ## Output contract
 
@@ -15,7 +15,7 @@ failure stdout still carries the object, and stderr repeats two lines:
 
 ```
 media_missing: no such file: /nope.mp4
-fix: sona add ./nope.mp4
+fix: splice add ./nope.mp4
 ```
 
 Exit codes: `0` ok, `2` project/precondition, `3` media, `4` ffmpeg, `5` usage.
@@ -34,7 +34,7 @@ clears it:
 ```json
 {"code": "clip_past_media",
  "message": "/media/a.mp4 is 00:00:09.000 long but clip clip_1 ends at 00:00:20.000",
- "fix": "sona trim clip_1 --to 00:00:09.000"}
+ "fix": "splice trim clip_1 --to 00:00:09.000"}
 ```
 
 Errors carry the same `fix` field, so a caller never has to guess the next move.
@@ -46,10 +46,10 @@ resulting `duration` and `warnings`, and writes nothing — no document write, n
 history snapshot, no index file.
 
 ```console
-$ sona add clip-a.mp4 --dry-run
+$ splice add clip-a.mp4 --dry-run
 {"ok": true, "dry_run": true, "added": [{"id": "clip_1", "duration": "00:00:06.000"}],
  "duration": "00:00:06.000"}
-$ ls .sona/history 2>/dev/null | wc -l
+$ ls .splice/history 2>/dev/null | wc -l
 0
 ```
 
@@ -60,7 +60,7 @@ already had `--dry-run`; it now returns the same envelope as everything else.
 
 Accepted anywhere a time is expected: `4`, `4s`, `4.5s`, `250ms`,
 `00:00:04.500`, `1:02.5`. The fractional part is optional everywhere.
-`sona frames --at` additionally accepts percentages of the timeline: `25%`.
+`splice frames --at` additionally accepts percentages of the timeline: `25%`.
 
 ## Geometry
 
@@ -73,19 +73,19 @@ Accepted anywhere a time is expected: `4`, `4s`, `4.5s`, `250ms`,
 ## init
 
 ```
-sona init [--size 1920x1080] [--fps 30]
+splice init [--size 1920x1080] [--fps 30]
 ```
 
-Creates `sona.json` and `.sona/`. Fails if the file exists.
+Creates `splice.json` and `.splice/`. Fails if the file exists.
 
 ```json
-{"ok": true, "project": "sona.json", "canvas": {"width": 1920, "height": 1080, "fps": "30"}}
+{"ok": true, "project": "splice.json", "canvas": {"width": 1920, "height": 1080, "fps": "30"}}
 ```
 
 ## add
 
 ```
-sona add <file>... [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
+splice add <file>... [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
                   [--speed <n>] [--at <index>] [--fill]
 ```
 
@@ -103,9 +103,9 @@ source times with `--pad` (default `120ms`) on each side. `--words` replaces
 `--from`/`--to`, and requires the index to describe the file being added.
 
 ```console
-$ sona find "good memory"
+$ splice find "good memory"
 00:12.6-00:14.4  w27-w31  You've got a [good memory.]
-$ sona add podcast.mp4 --words w27-w31
+$ splice add podcast.mp4 --words w27-w31
 {"ok": true, "added": [{"id": "clip_1", "duration": "00:02.040"}]}
 ```
 
@@ -120,7 +120,7 @@ Notes:
 ## list
 
 ```
-sona list
+splice list
 ```
 
 ```json
@@ -134,7 +134,7 @@ sona list
 ## trim
 
 ```
-sona trim <id> [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
+splice trim <id> [--from <t>] [--to <t>] [--words <range>] [--pad <t>]
 ```
 
 Moves the clip's source in/out points. Omitted side is left alone. `--to` must be
@@ -146,7 +146,7 @@ after `--from`.
 ## speed
 
 ```
-sona speed <id> <factor>
+splice speed <id> <factor>
 ```
 
 Pitch-preserving speed change. Factors outside 0.5–2.0 are chained into multiple
@@ -155,7 +155,7 @@ Pitch-preserving speed change. Factors outside 0.5–2.0 are chained into multip
 ## move
 
 ```
-sona move <id> <index>
+splice move <id> <index>
 ```
 
 Moves a clip to a 0-based position. An index past the end appends.
@@ -163,7 +163,7 @@ Moves a clip to a 0-based position. An index past the end appends.
 ## rm
 
 ```
-sona rm <id>
+splice rm <id>
 ```
 
 One verb for everything removable, so a diagnostic can always name a command that
@@ -181,7 +181,7 @@ Removing the last clip leaves an empty project; `render` then fails with `2`.
 ## text
 
 ```
-sona text "<content>" --from <t> --to <t> [--pos bottom|center|top] [--size 48] [--color white]
+splice text "<content>" --from <t> --to <t> [--pos bottom|center|top] [--size 48] [--color white]
 ```
 
 Burns text into the frame for the given window. `--color` takes any ffmpeg
@@ -196,7 +196,7 @@ A window past the end of the timeline is a `text_past_end` warning, not an error
 ## image
 
 ```
-sona image <file> --from <t> --to <t> [--pos bottom-left] [--width <px>]
+splice image <file> --from <t> --to <t> [--pos bottom-left] [--width <px>]
                  [--opacity 1.0] [--margin <px>]
 ```
 
@@ -205,9 +205,9 @@ Places a PNG over the picture: a logo, a lower third, a sting. `--pos` takes
 `bottom-right`; the corners are what a logo or a lower third actually wants.
 
 ```console
-$ sona image logo.png --from 1 --to 5 --pos top-right --width 120 --opacity 0.9
+$ splice image logo.png --from 1 --to 5 --pos top-right --width 120 --opacity 0.9
 {"ok": true, "changed": ["image_1"], "width_px": 120, "invalidated": 1}
-$ sona image lower-third.png --from 2 --to 4 --pos bottom --width 560
+$ splice image lower-third.png --from 2 --to 4 --pos bottom --width 560
 ```
 
 `--width` and `--margin` are pixels at the **project canvas** and are stored as a
@@ -221,7 +221,7 @@ subtitles rather than the reverse.
 ## transition
 
 ```
-sona transition <id> [--kind crossfade|dip_to_black] [--duration 500ms] [--none]
+splice transition <id> [--kind crossfade|dip_to_black] [--duration 500ms] [--none]
 ```
 
 Sets the transition that brings clip `<id>` in from its predecessor. `--none`
@@ -230,10 +230,10 @@ than both neighbours — the command refuses otherwise, and `diagnose` warns
 `transition_too_long` with a fix if a hand-edited project tries it.
 
 ```console
-$ sona transition clip_2 --kind crossfade --duration 600ms
+$ splice transition clip_2 --kind crossfade --duration 600ms
 {"ok": true, "changed": ["clip_2"], "kind": "crossfade", "duration": "00:00:08.400"}
-$ sona transition clip_3 --kind dip_to_black --duration 600ms
-$ sona list | jq -r '.duration'      # 7.800 — 9s of clips, two 0.6s overlaps
+$ splice transition clip_3 --kind dip_to_black --duration 600ms
+$ splice list | jq -r '.duration'      # 7.800 — 9s of clips, two 0.6s overlaps
 ```
 
 **Transitions cost a re-encode.** A plain concat copies streams; an `xfade` chain
@@ -244,7 +244,7 @@ the overlaps.
 ## audio
 
 ```
-sona audio <file> [--gain <db>]
+splice audio <file> [--gain <db>]
 ```
 
 Sets the music bed played under the clips, mixed at `duration=first` so it never
@@ -254,7 +254,7 @@ bed; there is exactly one.
 ## duck
 
 ```
-sona duck [--db -12] [--ramp 140ms] [--gap 400ms] [--pad 80ms] [--none]
+splice duck [--db -12] [--ramp 140ms] [--gap 400ms] [--pad 80ms] [--none]
 ```
 
 Lowers the music bed wherever the word index says there is speech. This is the
@@ -262,11 +262,11 @@ payoff of having a transcript: a gain envelope built from words, not a signal
 compressor guessing at loudness.
 
 ```console
-$ sona audio bed.mp3 --gain -6
-$ sona duck --db -18
+$ splice audio bed.mp3 --gain -6
+$ splice duck --db -18
 {"ok": true, "changed": ["audio"], "duck_db": -18.0, "phrases": 2, "invalidated": 1}
 
-$ sona plan | grep -o "volume='[^']*'"
+$ splice plan | grep -o "volume='[^']*'"
 volume='1-0.8741*min(1,max(0,min(1,min((t-1.920)/0.140,(4.080-t)/0.140)))+…':eval=frame
 ```
 
@@ -285,7 +285,7 @@ How the envelope is built:
   covers it.
 - The spans are resolved when you run `duck` and stored in the project, so a
   render needs no index. `duck_stale` warns when the cut has moved since; the fix
-  is `sona duck`.
+  is `splice duck`.
 - `--none` removes the ducking and leaves the bed alone.
 
 Every clip must be cut from the file the index describes, or there is no honest
@@ -294,7 +294,7 @@ mapping and the command refuses.
 ## caption
 
 ```
-sona caption <file.srt>
+splice caption <file.srt>
 ```
 
 Attaches an SRT and burns it in during the assemble pass. The cue count comes
@@ -308,14 +308,14 @@ problem.
 ## cut
 
 ```
-sona cut <id> [--fillers] [--silences <threshold>] [--keep 200ms] [--pad 120ms] [--dry-run]
+splice cut <id> [--fillers] [--silences <threshold>] [--keep 200ms] [--pad 120ms] [--dry-run]
 ```
 
 Removes filler words and long silences from one clip, replacing it with the spans
 that survive. Needs an index for that clip's source.
 
 ```console
-$ sona cut clip_1 --silences '>0.6s' --fillers
+$ splice cut clip_1 --silences '>0.6s' --fillers
 {"ok": true, "changed": ["clip_1"], "replaced_by": ["clip_1", "clip_2", "clip_3"],
  "removed": [{"from": "00:00:00.100", "to": "00:00:00.600"},
              {"from": "00:00:12.500", "to": "00:00:13.000"}],
@@ -342,14 +342,14 @@ Cutting removes time, so anything timed against the old timeline is now offset:
 ## scenes
 
 ```
-sona scenes [--threshold 0.4] [--min 500ms] [--json]
+splice scenes [--threshold 0.4] [--min 500ms] [--json]
 ```
 
 Detects shot boundaries with ffmpeg's `scene` score, merges anything shorter than
 `--min` into its neighbour, and writes the result into the index:
 
 ```console
-$ sona scenes
+$ splice scenes
 00:00.0-00:02.0  key 00:00.2  scene 1
 00:02.0-00:02.2  key 00:02.0  scene 2
 00:02.2-00:04.2  key 00:02.4  scene 3
@@ -373,7 +373,7 @@ file it ran on, so a modified source is re-scanned rather than silently trusted.
 ## index
 
 ```
-sona index --from <transcript> [--audio <file>] [--force] [--language <code>]
+splice index --from <transcript> [--audio <file>] [--force] [--language <code>]
 ```
 
 Builds the word index for a source's audio. Words get stable ids (`w1`, `w2`, …)
@@ -385,13 +385,13 @@ recording is indexed once no matter which container it arrives in.
 interpolated by character share and the index is marked `approximate: true`.
 
 `--audio` defaults to the first clip's source, then to the already-indexed
-source. The audio is downmixed to `.sona/audio/<key>.wav` on first use (deletable
+source. The audio is downmixed to `.splice/audio/<key>.wav` on first use (deletable
 cache).
 
 ```json
 {"ok": true, "audio_hash": "e6f429cf…", "audio_duration": "00:00:30.988",
  "provider": "gemini", "words": 78, "cached": false,
- "index": ".sona/index/e6f429cf….json"}
+ "index": ".splice/index/e6f429cf….json"}
 ```
 
 Re-running with the same audio and transcript reports `cached: true` and takes
@@ -401,13 +401,13 @@ are stable for a given index, not across different transcripts.
 ## view
 
 ```
-sona view --range <start-end> [--json]
+splice view --range <start-end> [--json]
 ```
 
 Prints the indexed words overlapping the range as one line per utterance:
 
 ```console
-$ sona view --range 0:05-0:15
+$ splice view --range 0:05-0:15
 00:03.8-00:06.4  w4-w11  It's been ages since I last saw you.
 00:06.7-00:08.4  w12-w16  How are you and Jackie?
 00:08.5-00:09.6  w17-w19  Yeah, good, thanks.
@@ -426,24 +426,24 @@ the time, and the anchor for a caption you write by hand.
 is about **970 bytes against 2,275 for the JSON** — that difference is the whole
 reason these two commands print text.
 
-`sona view` and `sona find` are read views: stdout is plain text, not the usual
+`splice view` and `splice find` are read views: stdout is plain text, not the usual
 single JSON object. Pass `--json` when a caller needs the envelope. Errors are
 still JSON, and the exit codes are unchanged.
 
 ## find
 
 ```
-sona find "<query>" [--limit 20] [--json]
+splice find "<query>" [--limit 20] [--json]
 ```
 
 Case- and punctuation-insensitive word-sequence match. One line per hit, with the
 matched span bracketed so the reason for the match is visible:
 
 ```console
-$ sona find "good memory"
+$ splice find "good memory"
 00:12.6-00:14.4  w27-w31  You've got a [good memory.]
 
-$ sona find jackie
+$ splice find jackie
 00:06.7-00:08.4  w12-w16  How are you and [Jackie?]
 ```
 
@@ -453,7 +453,7 @@ No hits prints nothing and exits 0; add `--json` to get `{"hits": []}` explicitl
 ## inspect
 
 ```
-sona inspect
+splice inspect
 ```
 
 `list` plus canvas, overlay/audio/caption presence, and `warnings[]`. Use it
@@ -462,7 +462,7 @@ before a render to learn what is wrong without spawning ffmpeg.
 ## plan
 
 ```
-sona plan [--preview]
+splice plan [--preview]
 ```
 
 The exact argv per step, whether each is already cached, the profile, and the
@@ -480,11 +480,11 @@ This is the debugging lever: if the render is wrong, the argv says why.
 ## render
 
 ```
-sona render [-o out.mp4] [--preview] [--loudnorm] [--lufs -14] [--true-peak -1]
+splice render [-o out.mp4] [--preview] [--loudnorm] [--lufs -14] [--true-peak -1]
             [--lra 11] [--timeout 3600]
 ```
 
-Executes the plan into `.sona/cache/`, then copies the final step to `-o`.
+Executes the plan into `.splice/cache/`, then copies the final step to `-o`.
 
 ```json
 {"ok": true, "out": "out.mp4", "duration": "00:00:08.333",
@@ -500,7 +500,7 @@ plan**, not a quality knob — every step key includes the profile, so preview a
 final caches coexist and neither invalidates the other.
 
 ```console
-$ sona render --preview
+$ splice render --preview
 {"ok": true, "profile": "preview", "size": "480x852", "fps": "15",
  "out": "preview.mp4", "steps": {"total": 2, "ran": 2, "reused": 0}}
 ```
@@ -513,7 +513,7 @@ audio is re-encoded through ffmpeg's `loudnorm`. Targets are `--lufs` (integrate
 default `-14`), `--true-peak` (default `-1`) and `--lra` (default `11`).
 
 ```console
-$ sona render --loudnorm -o loud.mp4
+$ splice render --loudnorm -o loud.mp4
 {"ok": true, "loudness": {"i": -14.0, "tp": -1.0, "lra": 11.0},
  "steps": {"total": 2, "ran": 1, "reused": 1}}
 ```
@@ -523,7 +523,7 @@ reused rather than re-encoded. A different `--lufs` is a different cache entry, 
 a −20 dB master and a −14 dB master coexist.
 
 It is **one-pass** `loudnorm`, chosen so every step's argv stays knowable at plan
-time — the thing `sona plan` promises. Two-pass measurement would make the apply
+time — the thing `splice plan` promises. Two-pass measurement would make the apply
 step depend on a run. The cost is that the gain is applied dynamically across the
 program rather than measured once; for a single delivered file that is the usual
 trade, and if you need exact integrated numbers you can measure the result with
@@ -535,21 +535,21 @@ too, which is useful for checking a phone speaker mix before the full render.
 ## frames
 
 ```
-sona frames [--at <t,t,...>] [--sheet <n>] [-o .sona/preview] [--preview]
+splice frames [--at <t,t,...>] [--sheet <n>] [-o .splice/preview] [--preview]
 ```
 
 Writes PNG stills and/or a tiled contact sheet with a burnt-in timecode.
 Stills are scaled to 768 px wide for vision-model token cost.
 
 ```json
-{"ok": true, "frames": [{"path": "/work/proj/.sona/preview/at-00001-000.png"},
-                        {"kind": "sheet", "path": "/work/proj/.sona/preview/sheet.png"}]}
+{"ok": true, "frames": [{"path": "/work/proj/.splice/preview/at-00001-000.png"},
+                        {"kind": "sheet", "path": "/work/proj/.splice/preview/sheet.png"}]}
 ```
 
 Reads from the last cached render step, so a render must run first — the final
 one by default, or the preview one with `--preview`. The two caches are separate,
 so `frames` without the flag cannot see a preview-only render, and each writes to
-its own directory (`.sona/preview` vs `.sona/preview-proxy`) so the stills of one
+its own directory (`.splice/preview` vs `.splice/preview-proxy`) so the stills of one
 never overwrite the other.
 
 Stills are never upscaled: a proxy still comes out at proxy size, which is both
@@ -557,11 +557,11 @@ honest and cheaper to read.
 
 ## layers and cameras
 
-The document (version 2) already models layers and camera keys, and `sona` will
+The document (version 2) already models layers and camera keys, and `splice` will
 refuse to render one rather than ignore it:
 
 ```console
-$ sona render
+$ splice render
 {"error":{"code":"composite_not_built",
  "message":"this project has 2 layers, but compositing is designed and not implemented"}}
 ```
@@ -574,10 +574,10 @@ The design, including the commands that will exist, is
 ## history
 
 ```
-sona history [--limit 20]
+splice history [--limit 20]
 ```
 
-Every mutating command snapshots `sona.json` into `.sona/history/` **before** it
+Every mutating command snapshots `splice.json` into `.splice/history/` **before** it
 changes anything. Newest first:
 
 ```json
@@ -586,27 +586,27 @@ changes anything. Newest first:
    "clips": 2, "overlays": 1, "captions": false, "index": false}]}
 ```
 
-The last 50 are kept. `.sona/` stays cache in the sense that deleting it costs
+The last 50 are kept. `.splice/` stays cache in the sense that deleting it costs
 history, never content — but it is the only copy of your undo stack, so do not
 clear it reflexively mid-session.
 
 ## undo
 
 ```
-sona undo [--steps 1]
+splice undo [--steps 1]
 ```
 
 Restores the document to how it was before the most recent mutation and drops
 that snapshot, so repeating `undo` walks further back.
 
 ```console
-$ sona undo
+$ splice undo
 {"ok": true, "restored": [{"seq": 4, "command": "trim", "age": "just now", "clips": 2}]}
 ```
 
 Two behaviours worth knowing:
 
-- **It works on a broken document.** `undo` never parses `sona.json`; it reads
+- **It works on a broken document.** `undo` never parses `splice.json`; it reads
   the snapshot and replaces the file atomically. A corrupted project is one
   command from fixed.
 - **No-op snapshots are skipped.** A command that failed after taking a snapshot,
@@ -618,7 +618,7 @@ Two behaviours worth knowing:
 ## doctor
 
 ```
-sona doctor
+splice doctor
 ```
 
 Read-only capability check: ffmpeg version, `libx264`, `libass`, `drawtext`,

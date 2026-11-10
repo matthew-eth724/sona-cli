@@ -14,9 +14,9 @@ use crate::report::{fail_from, ok};
 use crate::time::{Rational, Time, TimeRange};
 
 #[derive(Parser)]
-#[command(name = "sona", version, about = "video editing CLI for agents")]
+#[command(name = "splice", version, about = "video editing CLI for agents")]
 pub struct Cli {
-    #[arg(long, global = true, default_value = "sona.json")]
+    #[arg(long, global = true, default_value = "splice.json")]
     project: PathBuf,
     #[command(subcommand)]
     cmd: Cmd,
@@ -335,7 +335,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Add { files, from, to, speed, at, fill, words, pad, dry_run } => {
             if files.is_empty() {
-                bail!("usage: sona add <file>...");
+                bail!("usage: splice add <file>...");
             }
             let mut store = Store::open(&path)?;
             if !dry_run {
@@ -377,7 +377,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     let idx = project_index(&store)?;
                     if !same_file(&idx_source(&store), &abs) {
                         bail!(
-                            "usage: the index describes {}, not {}; run `sona index --from <transcript> --audio {}`",
+                            "usage: the index describes {}, not {}; run `splice index --from <transcript> --audio {}`",
                             idx_source(&store).display(),
                             abs.display(),
                             abs.display()
@@ -560,7 +560,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 finish(&mut store, &mut media, dry_run, json!({"changed": ["audio"], "invalidated": 1}))
             } else {
                 bail!(
-                    "usage: nothing called {id}; try a clip id, a text id, `captions` or `audio` (sona list)"
+                    "usage: nothing called {id}; try a clip id, a text id, `captions` or `audio` (splice list)"
                 )
             }
         }
@@ -652,7 +652,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .tracks
                 .audio
                 .as_ref()
-                .context("usage: no music bed; run `sona audio <file>` first")?
+                .context("usage: no music bed; run `splice audio <file>` first")?
                 .clone();
             if db >= 0.0 {
                 bail!("usage: --db must be negative (it lowers the bed)");
@@ -713,7 +713,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             if let Some(b) = store.project.tracks.audio.as_mut() {
                 b.duck = duck;
             } else {
-                bail!("usage: no music bed; run `sona audio <file>` first");
+                bail!("usage: no music bed; run `splice audio <file>` first");
             }
             finish(
                 &mut store,
@@ -791,7 +791,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
             // Replacing the bed keeps any existing duck settings, but the spans
-            // are stale until `sona duck` runs again.
+            // are stale until `splice duck` runs again.
             let duck = store.project.tracks.audio.as_ref().and_then(|b| b.duck.clone());
             store.project.tracks.audio = Some(AudioBed {
                 source: source.to_string_lossy().to_string(),
@@ -892,7 +892,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         "tracks.captions",
                         "captions were timed against the old timeline and are now offset",
                     )
-                    .with_fix(format!("sona undo   (or re-run: sona caption {})", 
+                    .with_fix(format!("splice undo   (or re-run: splice caption {})", 
                         store.project.tracks.captions.as_ref().map(|c| c.source.clone()).unwrap_or_default())),
                 );
             }
@@ -903,7 +903,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         "tracks.overlays",
                         "text overlays were timed against the old timeline and are now offset",
                     )
-                    .with_fix("sona undo   (or re-add the overlays at their new times)"),
+                    .with_fix("splice undo   (or re-add the overlays at their new times)"),
                 );
             }
             if dry_run {
@@ -954,10 +954,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .tracks
                 .index
                 .as_ref()
-                .context("no_index: run `sona index --from <transcript>` first")?;
+                .context("no_index: run `splice index --from <transcript>` first")?;
             let source = store.resolve(&idx_ref.source);
             let min_len = Time::parse(&min)?;
-            let idx_path = index::Index::path(&store.dir().join(".sona"), &idx_ref.audio_hash);
+            let idx_path = index::Index::path(&store.dir().join(".splice"), &idx_ref.audio_hash);
             let mut idx = index::Index::load(&idx_path)?;
 
             let stat = crate::cache::stat_token(&source);
@@ -1035,7 +1035,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let transcript_path = std::fs::canonicalize(&from)
                 .with_context(|| format!("no such file: {}", from.display()))?;
             let transcript_hash = audio::sha256_file(&transcript_path)?;
-            let cache_root = store.dir().join(".sona");
+            let cache_root = store.dir().join(".splice");
             let idx_path = index::Index::path(&cache_root, &fp.sha256);
 
             let mut cached = false;
@@ -1089,7 +1089,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                                 last.end, dur
                             ),
                         )
-                        .with_fix("sona index --from <the transcript for this file> --audio <this file>"),
+                        .with_fix("splice index --from <the transcript for this file> --audio <this file>"),
                     );
                 }
             }
@@ -1214,7 +1214,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let source = plan.last_output().to_path_buf();
             if !source.exists() {
                 bail!(
-                    "nothing rendered yet (run `sona render{}`)",
+                    "nothing rendered yet (run `splice render{}`)",
                     if preview { " --preview" } else { "" }
                 );
             }
@@ -1224,9 +1224,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                 &out
                     .unwrap_or_else(|| {
                         PathBuf::from(if preview {
-                            ".sona/preview-proxy"
+                            ".splice/preview-proxy"
                         } else {
-                            ".sona/preview"
+                            ".splice/preview"
                         })
                     })
                     .to_string_lossy(),
@@ -1468,9 +1468,9 @@ fn project_index(store: &Store) -> Result<index::Index> {
         .tracks
         .index
         .as_ref()
-        .context("no_index: run `sona index --from <transcript.json|.srt>` first")?;
+        .context("no_index: run `splice index --from <transcript.json|.srt>` first")?;
     index::Index::load(&index::Index::path(
-        &store.dir().join(".sona"),
+        &store.dir().join(".splice"),
         &r.audio_hash,
     ))
 }

@@ -82,13 +82,13 @@ pub fn fail(code: &str, message: impl Into<String>, fix: Option<String>) -> ! {
 /// attached to an error so an agent does not have to guess the next move.
 pub fn default_fix(code: &str) -> Option<String> {
     let fix = match code {
-        "no_index" => "sona index --from <transcript.json|.srt>",
-        "no_history" => "sona history",
-        "usage" => "sona <command> --help",
-        "media_missing" => "sona list   (shows clips whose source is gone)",
-        "ffmpeg_failed" => "sona plan   (shows the argv that failed)",
-        "project_invalid" => "sona undo   (restore the last good document)",
-        "no_font" => "install a font or fix fontconfig, then sona doctor",
+        "no_index" => "splice index --from <transcript.json|.srt>",
+        "no_history" => "splice history",
+        "usage" => "splice <command> --help",
+        "media_missing" => "splice list   (shows clips whose source is gone)",
+        "ffmpeg_failed" => "splice plan   (shows the argv that failed)",
+        "project_invalid" => "splice undo   (restore the last good document)",
+        "no_font" => "install a font or fix fontconfig, then splice doctor",
         _ => return None,
     };
     Some(fix.to_string())
