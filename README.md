@@ -106,5 +106,11 @@ never information.
 | [docs/troubleshooting.md](docs/troubleshooting.md) | error code → cause → fix |
 | [docs/design.md](docs/design.md) | why it is shaped this way |
 
+The verification skill (launch, doctor, drive, capture, cleanup, six-feature map)
+ships twice: `.claude/skills/verify/` for Claude Code and
+`.agents/skills/verify/` for harnesses that read `.agents/`. The two trees are
+identical except for their own script paths; `tools/check-skill-mirror.sh` fails
+when they drift.
+
 Not implemented yet, and not documented as if it were: automatic transcription,
 image overlays, transitions between clips, multi-track compositing, keyframes.
