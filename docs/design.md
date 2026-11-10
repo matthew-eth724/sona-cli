@@ -626,6 +626,11 @@ Added after the first build, for the clipping workflow:
   envelope, and keep JSON for errors. Measured at 970 bytes against 2,275 for the
   same 30-second range, which is the whole point of the exception.
 
+Designed, not built: multi-track compositing and keyframes, in
+[design-compositing.md](design-compositing.md). It bumps the document to version 2
+(layers, placement, camera keyframes), and the design's first gate is that a v1
+project must plan byte-identically before any compositor code lands.
+
 Unimplemented on purpose, still in the plan: ASR adapters (fixtures are
 committed), image overlays, reframe presets beyond Fit/Fill, audio ducking,
 transition/xfade between clips, `--preview` quality tier.
