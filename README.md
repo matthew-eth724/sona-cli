@@ -10,6 +10,7 @@ $ sona add demo.webm --from 12s --to 28s --speed 1.5
 $ sona index --from transcript.json --audio podcast.mp4
 $ sona find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship faster] …
 $ sona add podcast.mp4 --words w118-w126
+$ sona cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
 $ sona text "Ship faster" --from 0.5 --to 4 --pos bottom
 $ sona caption subs.srt
 $ sona render -o out.mp4
@@ -68,6 +69,7 @@ filters exist, which font `drawtext` will use, and whether ASR keys are visible.
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
 | layers | `text` `audio` `caption` |
 | reading | `index` `view` `find` |
+| tighten | `cut` |
 | output | `plan` `render` `frames` |
 
 Full reference: [docs/cli.md](docs/cli.md).

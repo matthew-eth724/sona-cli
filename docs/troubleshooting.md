@@ -19,6 +19,7 @@ $ sona doctor
 | `unreadable` | 3 | ffprobe cannot demux the file | re-encode the source, or check it is really a video |
 | `ffmpeg_failed` | 4 | one render step failed | `sona plan`, find that step, read its argv |
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `sona <cmd> --help` |
+| `usage: no clip` | 5 | the id is not in the timeline | `sona list` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.sona/index/` was deleted | `sona index --from <transcript>` |
 | `no_font` | 2 | `fc-match` resolved no sans font | install a font or fix fontconfig; `doctor` shows the resolved path |
 
@@ -56,6 +57,18 @@ re-see the cue count.
 **Audio is silent after adding a music bed.** `amix` ends with the *first* input,
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
+
+**`cut` removed nothing.** Either the transcript has no filler words and no gap
+over the threshold, or the index is for a different file (that case is an error,
+not silence). Try `--dry-run` with a lower threshold, and remember `--silences`
+shortens a gap rather than deleting it: `--keep 200ms` still leaves 200 ms.
+
+**`cut` says it would remove the whole clip.** The threshold is above every gap
+and `--keep` is large enough to leave nothing. Lower `--keep`, then re-run.
+
+**Captions or overlays are now out of sync.** `cut` removes time, so anything
+timed against the old timeline moved. `cut_shifts_layers` warned about it. Recut
+captions after the edit, not before.
 
 **`find` returns nothing but you can see the words.** Matching ignores case and
 punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and

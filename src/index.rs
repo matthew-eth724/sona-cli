@@ -11,8 +11,7 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::paths::arg;
-use crate::time::Time;
+use crate::time::{Time, TimeRange};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Word {
@@ -212,6 +211,111 @@ pub fn span_for(idx: &Index, first: usize, last: usize, pad: Time) -> Result<(Ti
     let start = Time::from_micros((idx.words[first].start.micros() - pad.micros()).max(0));
     let end = Time::from_micros(idx.words[last].end.micros() + pad.micros());
     Ok((start, end))
+}
+
+/// Filler words removed by `sona cut --fillers`. Deliberately conservative:
+/// deleting "like" or "actually" because a model guessed is worse than leaving
+/// an "um" in.
+pub const FILLERS: &[&str] = &[
+    "um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "ahh", "eh", "hmm", "hmmm", "mm", "mmm",
+];
+
+#[derive(Debug, Clone)]
+pub struct Cut {
+    /// Spans to drop, sorted and merged.
+    pub remove: Vec<TimeRange>,
+    /// What is left, sorted, with slivers dropped.
+    pub kept: Vec<TimeRange>,
+}
+
+/// Where to cut `range` to remove fillers and long silences.
+///
+/// `silence` is a threshold: a gap longer than this is shortened to `keep`,
+/// half of that at each end, so speech never starts on a hard edge.
+pub fn plan_cut(
+    idx: &Index,
+    range: TimeRange,
+    fillers: bool,
+    silence: Option<Time>,
+    keep: Time,
+    pad: Time,
+) -> Cut {
+    let words: Vec<&Word> = idx
+        .words
+        .iter()
+        .filter(|w| w.end > range.start && w.start < range.end)
+        .collect();
+
+    let mut remove: Vec<TimeRange> = Vec::new();
+
+    if fillers {
+        for w in &words {
+            if FILLERS.contains(&normalize(&w.text).as_str()) {
+                remove.push(TimeRange {
+                    start: Time::from_micros((w.start.micros() - pad.micros()).max(range.start.micros())),
+                    end: Time::from_micros((w.end.micros() + pad.micros()).min(range.end.micros())),
+                });
+            }
+        }
+    }
+
+    if let Some(threshold) = silence {
+        // Gaps: before the first word, between words, after the last word.
+        let mut edges: Vec<(Time, Time)> = Vec::new();
+        if let Some(first) = words.first() {
+            edges.push((range.start, first.start));
+        } else {
+            edges.push((range.start, range.end));
+        }
+        for pair in words.windows(2) {
+            edges.push((pair[0].end, pair[1].start));
+        }
+        if let Some(last) = words.last() {
+            edges.push((last.end, range.end));
+        }
+        let half_keep = Time::from_micros(keep.micros() / 2);
+        for (a, b) in edges {
+            let gap = b.micros() - a.micros();
+            if gap <= threshold.micros() {
+                continue;
+            }
+            let trim_start = Time::from_micros(a.micros() + half_keep.micros());
+            let trim_end = Time::from_micros(b.micros() - half_keep.micros());
+            if trim_end > trim_start {
+                remove.push(TimeRange { start: trim_start, end: trim_end });
+            }
+        }
+    }
+
+    remove.sort_by_key(|r| r.start.micros());
+    let mut merged: Vec<TimeRange> = Vec::new();
+    for r in remove {
+        match merged.last_mut() {
+            Some(prev) if r.start <= prev.end => {
+                if r.end > prev.end {
+                    prev.end = r.end;
+                }
+            }
+            _ => merged.push(r),
+        }
+    }
+
+    // Complement of the removals, inside the clip range.
+    let mut kept: Vec<TimeRange> = Vec::new();
+    let mut cursor = range.start;
+    for r in &merged {
+        if r.start > cursor {
+            kept.push(TimeRange { start: cursor, end: r.start });
+        }
+        cursor = cursor.max(r.end);
+    }
+    if cursor < range.end {
+        kept.push(TimeRange { start: cursor, end: range.end });
+    }
+    // A kept span shorter than 120 ms is a click, not a line.
+    kept.retain(|k| k.end.micros() - k.start.micros() >= 120_000);
+
+    Cut { remove: merged, kept }
 }
 
 /// Lowercase, alphanumeric only. `Ship?` and `ship` are the same token.
@@ -421,5 +525,131 @@ mod word_range_tests {
     #[test]
     fn span_rejects_past_the_end() {
         assert!(span_for(&idx(), 0, 5, Time::ZERO).is_err());
+    }
+}
+
+#[cfg(test)]
+mod cut_tests {
+    use super::*;
+
+    fn w(id: usize, text: &str, a: f64, b: f64) -> Word {
+        Word {
+            id: format!("w{id}"),
+            text: text.into(),
+            start: Time::from_secs_f64(a),
+            end: Time::from_secs_f64(b),
+            speaker: None,
+            confidence: None,
+        }
+    }
+
+    fn idx() -> Index {
+        Index {
+            version: VERSION,
+            audio_hash: "t".into(),
+            audio_duration: Time::from_secs_f64(20.0),
+            transcript_hash: "t".into(),
+            provider: "gemini".into(),
+            language: None,
+            approximate: false,
+            words: vec![
+                w(1, "So", 1.0, 1.2),
+                w(2, "um,", 1.2, 1.5),      // filler
+                w(3, "we", 1.6, 1.7),
+                // 2.0s gap -> shorten
+                w(4, "ship.", 3.7, 4.0),
+                w(5, "Uh", 4.0, 4.3),        // filler
+                w(6, "today.", 4.3, 4.8),
+            ],
+        }
+    }
+
+    fn range(a: f64, b: f64) -> TimeRange {
+        TimeRange {
+            start: Time::from_secs_f64(a),
+            end: Time::from_secs_f64(b),
+        }
+    }
+
+    #[test]
+    fn fillers_are_removed_with_padding_merged() {
+        let c = plan_cut(&idx(), range(0.0, 5.0), true, None, Time::ZERO, Time::ZERO);
+        // "um," (1.2-1.5) and "Uh" (4.0-4.3)
+        assert_eq!(c.remove.len(), 2);
+        assert_eq!(c.remove[0].start.secs_f64(), 1.2);
+        assert_eq!(c.remove[1].start.secs_f64(), 4.0);
+        // back-to-back fillers merge into one removal
+        let mut two = idx();
+        two.words[3].start = Time::from_secs_f64(4.0);
+        two.words[3].end = Time::from_secs_f64(4.0);
+        let merged = plan_cut(&two, range(0.0, 5.0), true, None, Time::ZERO, Time::from_secs_f64(0.3));
+        assert_eq!(merged.remove.len(), 2);
+    }
+
+    #[test]
+    fn long_silence_is_shortened_not_deleted() {
+        let c = plan_cut(
+            &idx(),
+            range(0.0, 5.0),
+            false,
+            Some(Time::from_secs_f64(0.6)),
+            Time::from_secs_f64(0.2),
+            Time::ZERO,
+        );
+        // Two long gaps: the 1.0s of head silence, and 1.7 -> 3.7.
+        // Each keeps 0.1s at both ends, so speech never starts on a hard edge.
+        assert_eq!(c.remove.len(), 2);
+        assert!((c.remove[0].start.secs_f64() - 0.1).abs() < 0.001);
+        assert!((c.remove[0].end.secs_f64() - 0.9).abs() < 0.001);
+        assert!((c.remove[1].start.secs_f64() - 1.8).abs() < 0.001);
+        assert!((c.remove[1].end.secs_f64() - 3.6).abs() < 0.001);
+    }
+
+    #[test]
+    fn kept_spans_are_the_complement_and_cover_everything_else() {
+        let c = plan_cut(
+            &idx(),
+            range(0.0, 5.0),
+            false,
+            Some(Time::from_secs_f64(0.6)),
+            Time::from_secs_f64(0.2),
+            Time::ZERO,
+        );
+        assert_eq!(c.kept.len(), 2);
+        assert_eq!(c.kept[0].start.micros(), 900_000);
+        assert_eq!(c.kept[1].end.micros(), 5_000_000);
+        // Nothing covered twice, and the only time unaccounted for is the
+        // 100ms sliver at the head, dropped for being shorter than 120ms.
+        let covered: i64 = c.kept.iter().map(|k| k.end.micros() - k.start.micros()).sum();
+        let removed: i64 = c.remove.iter().map(|r| r.end.micros() - r.start.micros()).sum();
+        assert_eq!(covered + removed, 4_900_000);
+        assert_eq!(c.kept[0].start.micros(), 900_000);
+    }
+
+    #[test]
+    fn short_gaps_are_left_alone() {
+        let c = plan_cut(
+            &idx(),
+            range(0.0, 5.0),
+            false,
+            Some(Time::from_secs_f64(2.5)),
+            Time::ZERO,
+            Time::ZERO,
+        );
+        assert!(c.remove.is_empty());
+        assert_eq!(c.kept.len(), 1);
+    }
+
+    #[test]
+    fn everything_removed_produces_no_kept_spans() {
+        let c = plan_cut(
+            &idx(),
+            range(1.2, 1.5),
+            true,
+            None,
+            Time::ZERO,
+            Time::ZERO,
+        );
+        assert!(c.kept.is_empty());
     }
 }

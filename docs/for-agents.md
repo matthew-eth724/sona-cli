@@ -73,6 +73,19 @@ sona add podcast.mp4 --words w27-w31 # cuts with 120ms of air on each side
 sona trim clip_1 --words w27-w31     # same range, applied to an existing clip
 ```
 
+After cutting a clip to the right sentence, take the dead air and the ums out
+before you caption it:
+
+```bash
+sona cut clip_1 --silences '>0.6s' --fillers --dry-run   # see the spans first
+sona cut clip_1 --silences '>0.6s' --fillers
+sona list | jq -r '.duration'                            # shorter, split into spans
+```
+
+Do it before captions, not after: cutting shifts everything timed against the
+timeline, and `cut_shifts_layers` will tell you that you did it in the wrong
+order.
+
 `--pad` controls that air: raise it when a cut clips a consonant, set `--pad 0`
 when you want the word boundary exactly as reported. Word times from ASR are
 approximate (±100ms or so), so `--pad 0` plus a tight cut is how you get a

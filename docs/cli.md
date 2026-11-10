@@ -182,6 +182,40 @@ problem.
 {"ok": true, "changed": ["captions"], "cues": 42, "invalidated": 1, "duration": "00:00:42.500"}
 ```
 
+## cut
+
+```
+sona cut <id> [--fillers] [--silences <threshold>] [--keep 200ms] [--pad 120ms] [--dry-run]
+```
+
+Removes filler words and long silences from one clip, replacing it with the spans
+that survive. Needs an index for that clip's source.
+
+```console
+$ sona cut clip_1 --silences '>0.6s' --fillers
+{"ok": true, "changed": ["clip_1"], "replaced_by": ["clip_1", "clip_2", "clip_3"],
+ "removed": [{"from": "00:00:00.100", "to": "00:00:00.600"},
+             {"from": "00:00:12.500", "to": "00:00:13.000"}],
+ "saved": "00:00:02.487", "duration": "00:00:28.300"}
+```
+
+- `--fillers` drops `um`, `uh`, `hmm`, `er`, `ah`, `mm` and friends. The list is
+  deliberately conservative; deleting "like" because a model guessed is worse
+  than leaving an "um" in.
+- `--silences 0.6s` shortens every gap longer than 0.6s. `>0.6s` also parses.
+  `--keep` (default 200 ms) survives, split at both ends, so speech never starts
+  on a hard edge. Leading and trailing silence are shortened too.
+- `--pad` is air around a removed filler word, so neighbours do not butt together.
+- `--dry-run` returns the `removed` spans and `saved` time without touching the
+  project. Use it before a destructive cut.
+- Kept spans shorter than 120 ms are dropped: they are clicks, not lines.
+
+The clip is replaced by one clip per surviving span, in order, inheriting speed,
+transform and gain. Nothing to remove reports `changed: []`.
+
+Cutting removes time, so anything timed against the old timeline is now offset:
+`cut_shifts_layers` warns once for captions and once for overlays.
+
 ## index
 
 ```

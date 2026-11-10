@@ -95,6 +95,26 @@ enum Cmd {
     },
     /// Attach an SRT to burn in.
     Caption { source: PathBuf },
+    /// Remove fillers and long silences from a clip, splitting it into what
+    /// survives.
+    Cut {
+        id: String,
+        /// Drop filler words (um, uh, hmm, ...).
+        #[arg(long)]
+        fillers: bool,
+        /// Shorten every gap longer than this, e.g. `0.6s` or `>0.6s`.
+        #[arg(long)]
+        silences: Option<String>,
+        /// How much of each long gap to keep, split at both ends.
+        #[arg(long, default_value = "200ms")]
+        keep: String,
+        /// Air kept around a removed filler word, so words do not butt together.
+        #[arg(long, default_value = "120ms")]
+        pad: String,
+        /// Report the cuts without touching the project.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Build the word index for a source's audio (cached by audio hash).
     Index {
         #[arg(long)]
@@ -441,6 +461,127 @@ fn dispatch(cli: Cli) -> Result<()> {
             let (duration, warnings) = after_edit(&store, &mut media);
             ok(
                 json!({"changed": ["captions"], "cues": cues.len(), "invalidated": 1, "duration": duration}),
+                &warnings,
+            );
+            Ok(())
+        }
+        Cmd::Cut { id, fillers, silences, keep, pad, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            if !fillers && silences.is_none() {
+                bail!("usage: pass --fillers, --silences <threshold>, or both");
+            }
+            let threshold = match &silences {
+                Some(raw) => {
+                    let cleaned = raw.trim().trim_start_matches('>').trim_start_matches('=');
+                    Some(Time::parse(cleaned).with_context(|| {
+                        format!("usage: --silences takes a duration like 0.6s, got `{raw}`")
+                    })?)
+                }
+                None => None,
+            };
+            let keep = Time::parse(&keep)?;
+            let pad = Time::parse(&pad)?;
+
+            let idx = project_index(&store)?;
+            let idx_src = idx_source(&store);
+            let pos = store
+                .project
+                .tracks
+                .video
+                .iter()
+                .position(|c| c.id == id)
+                .with_context(|| format!("usage: no clip {id}"))?;
+            let base = store.project.tracks.video[pos].clone();
+            let clip_src = store.resolve(&base.source);
+            if !same_file(&idx_src, &clip_src) {
+                bail!(
+                    "usage: the index describes {}, not {}; index that file first",
+                    idx_src.display(),
+                    clip_src.display()
+                );
+            }
+
+            let range = TimeRange {
+                start: base.src_in,
+                end: base.src_out.unwrap_or_else(|| {
+                    media
+                        .get(&clip_src)
+                        .map(|m| m.duration)
+                        .unwrap_or(Time::ZERO)
+                }),
+            };
+            let cut = index::plan_cut(&idx, range, fillers, threshold, keep, pad);
+            if cut.remove.is_empty() {
+                ok(json!({"changed": [], "removed": [], "saved": "00:00:00.000"}), &[]);
+                return Ok(());
+            }
+            if cut.kept.is_empty() {
+                bail!("usage: that would remove all of {id}; loosen --silences or --keep");
+            }
+
+            let removed: Vec<serde_json::Value> = cut
+                .remove
+                .iter()
+                .map(|r| json!({"from": r.start.to_string(), "to": r.end.to_string()}))
+                .collect();
+            let saved_us: i64 = cut
+                .remove
+                .iter()
+                .map(|r| r.end.micros() - r.start.micros())
+                .sum();
+
+            if dry_run {
+                ok(
+                    json!({
+                        "dry_run": true,
+                        "changed": [],
+                        "would_replace": id,
+                        "removed": removed,
+                        "saved": Time::from_micros(saved_us).to_string(),
+                    }),
+                    &[],
+                );
+                return Ok(());
+            }
+
+            store.project.tracks.video.remove(pos);
+            let mut new_ids = Vec::new();
+            for (k, span) in cut.kept.iter().enumerate() {
+                let new_id = store.project.next_id("clip");
+                let mut clip = base.clone();
+                clip.id = new_id.clone();
+                clip.src_in = span.start;
+                clip.src_out = Some(span.end);
+                store.project.tracks.video.insert(pos + k, clip);
+                new_ids.push(new_id);
+            }
+
+            let mut warnings = store.project.diagnose(&mut media);
+            if store.project.tracks.captions.is_some() {
+                warnings.push(crate::report::Diagnostic::new(
+                    "cut_shifts_layers",
+                    "tracks.captions",
+                    "captions were timed against the old timeline and are now offset",
+                ));
+            }
+            if !store.project.tracks.overlays.is_empty() {
+                warnings.push(crate::report::Diagnostic::new(
+                    "cut_shifts_layers",
+                    "tracks.overlays",
+                    "text overlays were timed against the old timeline and are now offset",
+                ));
+            }
+            store.save()?;
+            let duration = store.project.duration(&mut media);
+            ok(
+                json!({
+                    "changed": [id],
+                    "replaced_by": new_ids,
+                    "removed": removed,
+                    "saved": Time::from_micros(saved_us).to_string(),
+                    "duration": duration.to_string(),
+                }),
                 &warnings,
             );
             Ok(())

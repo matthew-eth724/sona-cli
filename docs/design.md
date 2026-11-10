@@ -566,6 +566,12 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **`sona cut`.** Removes filler words and long silences from a clip by
+  replacing it with the spans that survive — the flat clip list already
+  expresses "several ranges of one source in order", so no new timeline model was
+  needed. Silences are shortened to `--keep` (split at both ends), never deleted
+  outright, because speech that starts on a hard edge sounds broken. Kept spans
+  under 120 ms are dropped as clicks.
 - **Word-range edits.** `add`/`trim` accept `--words w12-w19`, resolving ids to
   source times with a 120 ms pad on both sides (`--pad`). The ids exist to be
   cut with; converting them to times by hand is exactly the arithmetic that
