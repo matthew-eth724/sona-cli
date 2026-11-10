@@ -1,0 +1,95 @@
+name: publish to npm
+
+# One job per platform on a native runner: cross-compiling a CLI that shells out
+# to ffmpeg is not worth the surprises. Each job stages its package, then the
+# launcher publishes last so a partial release never leaves a launcher pointing
+# at a package that does not exist.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  platform:
+    name: ${{ matrix.pkg }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            key: linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            key: linux-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            key: darwin-x64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            key: darwin-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            key: win32-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo test --target ${{ matrix.target }}
+      - name: stage
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/sona"
+          [ "${{ matrix.key }}" = "win32-x64" ] && bin="$bin.exe"
+          node npm/stage.mjs "${{ matrix.key }}" "$bin"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: check the staged binary runs
+        shell: bash
+        # macOS leaves npm-installed binaries unsigned; npm does not set the
+        # quarantine bit, so they run. This step is what proves it per runner.
+        run: |
+          bin=$(ls npm/out/*/bin/sona* | head -1)
+          "$bin" --version
+      - name: publish the platform package
+        shell: bash
+        # No continue-on-error: a missing platform package would leave the
+        # launcher pointing at nothing, so a partial release must fail loudly.
+        run: npm publish $(ls -d npm/out/*/) --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.key }}
+          path: npm/out/
+
+  launcher:
+    needs: platform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: version must match the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          have=$(node -p "require('./npm/launcher/package.json').version")
+          [ "$tag" = "$have" ] || { echo "tag $tag != package $have"; exit 1; }
+      - run: npm publish --access public --provenance
+        working-directory: npm/launcher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

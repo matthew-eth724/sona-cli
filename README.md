@@ -68,6 +68,11 @@ $ ./target/release/sona doctor
  "font":"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","ok":true}
 ```
 
+Either way, **ffmpeg is required and is not bundled**: `sona` shells out to
+`ffmpeg`, `ffprobe` and `fc-match`, and the build must have `libx264`, `libass`
+and `freetype`. `brew install ffmpeg`, `apt install ffmpeg`, or
+`winget install Gyan.FFmpeg`. ffmpeg 7.x is what it is tested against.
+
 `doctor` is the first command to run anywhere new: it reports which encoders and
 filters exist, which font `drawtext` will use, and whether ASR keys are visible.
 
@@ -126,6 +131,7 @@ never information.
 | [docs/for-agents.md](docs/for-agents.md) | how an agent should drive it |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | error code → cause → fix |
 | [docs/design.md](docs/design.md) | why it is shaped this way |
+| [docs/design-compositing.md](docs/design-compositing.md) | the compositor and keyframes design |
 
 The verification skill (launch, doctor, drive, capture, cleanup, six-feature map)
 ships twice: `.claude/skills/verify/` for Claude Code and

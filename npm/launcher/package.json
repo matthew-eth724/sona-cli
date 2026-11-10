@@ -1,0 +1,36 @@
+{
+  "name": "@matthew-eth724/sona",
+  "version": "0.1.0",
+  "description": "A video editing CLI for AI agents: one JSON document in, ffmpeg out. Requires ffmpeg on PATH.",
+  "keywords": [
+    "video",
+    "ffmpeg",
+    "cli",
+    "agent",
+    "llm",
+    "editing"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matthew-eth724/sona-cli.git"
+  },
+  "homepage": "https://github.com/matthew-eth724/sona-cli#readme",
+  "bin": {
+    "sona": "bin/sona.js"
+  },
+  "files": [
+    "bin/sona.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@matthew-eth724/sona-linux-x64": "0.1.0",
+    "@matthew-eth724/sona-linux-arm64": "0.1.0",
+    "@matthew-eth724/sona-darwin-x64": "0.1.0",
+    "@matthew-eth724/sona-darwin-arm64": "0.1.0",
+    "@matthew-eth724/sona-win32-x64": "0.1.0"
+  }
+}
