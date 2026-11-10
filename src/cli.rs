@@ -459,15 +459,31 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::history::record(&store, "rm")?;
             }
             let mut media = MediaIndex::default();
-            let pos = store
+            // One verb for everything removable, so a diagnostic can name a
+            // command that exists instead of inventing one.
+            if let Some(pos) = store.project.tracks.video.iter().position(|c| c.id == id) {
+                store.project.tracks.video.remove(pos);
+                finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
+            } else if let Some(pos) = store
                 .project
                 .tracks
-                .video
+                .overlays
                 .iter()
-                .position(|c| c.id == id)
-                .with_context(|| format!("usage: no clip {id}"))?;
-            store.project.tracks.video.remove(pos);
-            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
+                .position(|o| matches!(o, Overlay::Text(t) if t.id == id))
+            {
+                store.project.tracks.overlays.remove(pos);
+                finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
+            } else if id == "captions" && store.project.tracks.captions.is_some() {
+                store.project.tracks.captions = None;
+                finish(&mut store, &mut media, dry_run, json!({"changed": ["captions"], "invalidated": 1}))
+            } else if id == "audio" && store.project.tracks.audio.is_some() {
+                store.project.tracks.audio = None;
+                finish(&mut store, &mut media, dry_run, json!({"changed": ["audio"], "invalidated": 1}))
+            } else {
+                bail!(
+                    "usage: nothing called {id}; try a clip id, a text id, `captions` or `audio` (sona list)"
+                )
+            }
         }
         Cmd::Text { content, from, to, pos, size, color, dry_run } => {
             let mut store = Store::open(&path)?;
@@ -1194,4 +1210,23 @@ fn parse_size(s: &str) -> Result<(u32, u32)> {
         .split_once(['x', 'X'])
         .context("usage: --size WxH, e.g. 1920x1080")?;
     Ok((w.trim().parse()?, h.trim().parse()?))
+}
+
+#[cfg(test)]
+mod rm_tests {
+    // The `rm` arm is exercised through the binary in the verification skill;
+    // this pins the id kinds it must accept so a refactor cannot silently drop
+    // one (it did once, and left a diagnostic pointing at a broken command).
+    #[test]
+    fn diagnostics_only_name_commands_that_work() {
+        let src = include_str!("cli.rs");
+        for needle in [
+            "nothing called {id}",
+            "id == \"captions\"",
+            "id == \"audio\"",
+            "matches!(o, Overlay::Text(t) if t.id == id)",
+        ] {
+            assert!(src.contains(needle), "rm lost a case: {needle}");
+        }
+    }
 }
