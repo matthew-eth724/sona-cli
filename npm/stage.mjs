@@ -40,6 +40,7 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(join(out, "bin"), { recursive: true });
 
 cpSync(binary, join(out, "bin", t.exe));
+cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
 chmodSync(join(out, "bin", t.exe), 0o755);
 
 writeFileSync(
@@ -55,7 +56,7 @@ writeFileSync(
       cpu: t.cpu,
       // npm refuses to install a package for the wrong platform, which is what
       // we want; no install script, no download.
-      files: ["bin"],
+      files: ["bin", "LICENSE"],
     },
     null,
     2

@@ -21,7 +21,8 @@
   },
   "files": [
     "bin/splice.js",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"
