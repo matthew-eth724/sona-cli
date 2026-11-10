@@ -133,11 +133,14 @@ pub fn plan(
         let m = media.get(&src)?.clone();
         let span = clip.source_span(m.duration);
         if span.micros() <= 0 {
-            warnings.push(Diagnostic::new(
-                "clip_empty",
-                format!("clip {}", clip.id),
-                format!("{} contributes no duration", clip.id),
-            ));
+            warnings.push(
+                Diagnostic::new(
+                    "clip_empty",
+                    format!("clip {}", clip.id),
+                    format!("{} contributes no duration", clip.id),
+                )
+                .with_fix(format!("sona rm {}", clip.id)),
+            );
             continue;
         }
         let mut inv = Invocation::new();

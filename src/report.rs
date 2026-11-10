@@ -32,6 +32,11 @@ impl Diagnostic {
         }
     }
 
+    pub fn with_fix(mut self, fix: impl Into<String>) -> Diagnostic {
+        self.fix = Some(fix.into());
+        self
+    }
+
     pub fn to_json(&self) -> Value {
         let mut v = json!({
             "code": self.code,
@@ -71,6 +76,22 @@ pub fn fail(code: &str, message: impl Into<String>, fix: Option<String>) -> ! {
         eprintln!("fix: {fix}");
     }
     std::process::exit(exit_code(code));
+}
+
+/// The command that most often clears this failure. Advice, not a promise: it is
+/// attached to an error so an agent does not have to guess the next move.
+pub fn default_fix(code: &str) -> Option<String> {
+    let fix = match code {
+        "no_index" => "sona index --from <transcript.json|.srt>",
+        "no_history" => "sona history",
+        "usage" => "sona <command> --help",
+        "media_missing" => "sona list   (shows clips whose source is gone)",
+        "ffmpeg_failed" => "sona plan   (shows the argv that failed)",
+        "project_invalid" => "sona undo   (restore the last good document)",
+        "no_font" => "install a font or fix fontconfig, then sona doctor",
+        _ => return None,
+    };
+    Some(fix.to_string())
 }
 
 pub fn exit_code(code: &str) -> i32 {
@@ -120,5 +141,5 @@ pub fn fail_from(e: anyhow::Error) -> ! {
         .map(|(_, rest)| rest)
         .unwrap_or(first)
         .to_string();
-    fail(code, message, None)
+    fail(code, message, default_fix(code))
 }

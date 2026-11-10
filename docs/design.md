@@ -566,6 +566,19 @@ Two behaviours changed after that run:
 
 Added after the first build, for the clipping workflow:
 
+- **`--dry-run` everywhere.** Every mutation can report its resulting duration and
+  diagnostics without writing: no save, no history snapshot, no index file. It
+  reuses the same `finish` path as the real run, so the dry answer and the real
+  answer cannot drift.
+- **Diagnostics carry a `fix`.** Warnings and errors name the command that clears
+  them, with ids already substituted (`sona rm clip_1`, `sona trim clip_1 --to
+  00:00:09.000`). That forced `rm` to handle overlays and the `captions`/`audio`
+  singletons — advice pointing at a command that does not exist is worse than no
+  advice.
+- **`sona scenes`.** ffmpeg `select=gt(scene,T)` + `showinfo` for cuts, merged so
+  nothing shorter than `--min` survives, with a keyframe timestamp per shot. Stored
+  in the index beside the audio hash but tagged with the source's stat, because
+  scenes describe the picture: a `--min` change or a modified file re-detects.
 - **Preview profile.** `render --preview` fits the canvas into 480x854, caps fps
   at 15, encodes crf 30 ultrafast with 64k audio, and writes `preview.mp4`. The
   profile tag is part of every step key, so the two renders never share an entry

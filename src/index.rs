@@ -25,6 +25,25 @@ pub struct Word {
     pub confidence: Option<f32>,
 }
 
+/// One detected shot, with a timestamp to sample it at.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Scene {
+    pub start: Time,
+    pub end: Time,
+    pub keyframe: Time,
+}
+
+/// Scene detection is a property of the *picture*, not of the audio the index
+/// is keyed by, so the stat of the source it ran against is stored beside it.
+/// Change the file and the next `sona scenes` detects again.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Scenes {
+    pub source_stat: String,
+    pub threshold: f32,
+    pub min_len: Time,
+    pub scenes: Vec<Scene>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Index {
     pub version: u32,
@@ -37,6 +56,8 @@ pub struct Index {
     #[serde(default)]
     pub approximate: bool,
     pub words: Vec<Word>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenes: Option<Scenes>,
 }
 
 pub const VERSION: u32 = 1;
@@ -318,6 +339,51 @@ pub fn plan_cut(
     Cut { remove: merged, kept }
 }
 
+/// Cuts (in source time) from ffmpeg's `scene` score, merged into scenes no
+/// shorter than `min_len`. The tail of the file is closed with `duration`.
+pub fn merge_scenes(mut cuts: Vec<Time>, duration: Time, min_len: Time) -> Vec<Scene> {
+    cuts.retain(|c| *c > Time::ZERO && *c < duration);
+    cuts.sort();
+    cuts.dedup();
+
+    let mut bounds = vec![Time::ZERO];
+    bounds.extend(cuts);
+    bounds.push(duration);
+
+    // Merge any scene shorter than min_len into its predecessor: a 3-frame
+    // flash is a cut artefact, not a shot.
+    let mut merged: Vec<(Time, Time)> = Vec::new();
+    for w in bounds.windows(2) {
+        let (start, end) = (w[0], w[1]);
+        if end <= start {
+            continue;
+        }
+        match merged.last_mut() {
+            Some(prev) if end.micros() - prev.0.micros() < min_len.micros() => prev.1 = end,
+            Some(prev) if start.micros() - prev.0.micros() < min_len.micros() => {
+                prev.1 = end;
+            }
+            _ => merged.push((start, end)),
+        }
+    }
+
+    merged
+        .into_iter()
+        .filter(|(a, b)| b.micros() > a.micros())
+        .map(|(start, end)| {
+            let len = end.micros() - start.micros();
+            // Sample a little inside the shot: the first frame of a cut is
+            // often a flash or a blur.
+            let lead = (len / 10).min(300_000);
+            Scene {
+                start,
+                end,
+                keyframe: Time::from_micros(start.micros() + lead),
+            }
+        })
+        .collect()
+}
+
 /// Lowercase, alphanumeric only. `Ship?` and `ship` are the same token.
 pub fn normalize(s: &str) -> String {
     s.chars()
@@ -410,6 +476,7 @@ mod tests {
             provider: "gemini".into(),
             language: None,
             approximate: false,
+            scenes: None,
             words: vec![
                 w(0, "Hi.", 0, 500),
                 w(1, "We", 600, 700),
@@ -502,6 +569,7 @@ mod word_range_tests {
             provider: "gemini".into(),
             language: None,
             approximate: false,
+            scenes: None,
             words: vec![
                 Word { id: "w1".into(), text: "Ship".into(), start: Time::from_secs_f64(1.0), end: Time::from_secs_f64(1.4), speaker: None, confidence: None },
                 Word { id: "w2".into(), text: "faster.".into(), start: Time::from_secs_f64(1.4), end: Time::from_secs_f64(2.0), speaker: None, confidence: None },
@@ -552,6 +620,7 @@ mod cut_tests {
             provider: "gemini".into(),
             language: None,
             approximate: false,
+            scenes: None,
             words: vec![
                 w(1, "So", 1.0, 1.2),
                 w(2, "um,", 1.2, 1.5),      // filler

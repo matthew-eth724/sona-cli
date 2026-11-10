@@ -24,11 +24,37 @@ Mutating commands all return the same envelope:
 
 ```json
 {"ok": true, "changed": ["clip_2"], "invalidated": 1,
- "duration": "00:00:07.666", "warnings": []}
+ "duration": "00:00:07.666", "warnings": [{"code": "clip_past_media", …}]}
 ```
 
 `invalidated` is the number of render steps the edit can affect. `warnings` is
-omitted when empty.
+omitted when empty, and every warning carries a `fix` naming a command that
+clears it:
+
+```json
+{"code": "clip_past_media",
+ "message": "/media/a.mp4 is 00:00:09.000 long but clip clip_1 ends at 00:00:20.000",
+ "fix": "sona trim clip_1 --to 00:00:09.000"}
+```
+
+Errors carry the same `fix` field, so a caller never has to guess the next move.
+
+### --dry-run
+
+Every mutating command accepts `--dry-run`: it computes the change, reports the
+resulting `duration` and `warnings`, and writes nothing — no document write, no
+history snapshot, no index file.
+
+```console
+$ sona add clip-a.mp4 --dry-run
+{"ok": true, "dry_run": true, "added": [{"id": "clip_1", "duration": "00:00:06.000"}],
+ "duration": "00:00:06.000"}
+$ ls .sona/history 2>/dev/null | wc -l
+0
+```
+
+Use it to preview a trim, a cut, or a captions swap before committing. `cut`
+already had `--dry-run`; it now returns the same envelope as everything else.
 
 ## Times
 
@@ -140,8 +166,17 @@ Moves a clip to a 0-based position. An index past the end appends.
 sona rm <id>
 ```
 
-Removes a clip. Removing the last clip leaves an empty project; `render` then
-fails with `2`.
+One verb for everything removable, so a diagnostic can always name a command that
+exists:
+
+| id | removes |
+| --- | --- |
+| `clip_3` | that clip |
+| `text_2` | that text overlay |
+| `captions` | the attached SRT |
+| `audio` | the music bed |
+
+Removing the last clip leaves an empty project; `render` then fails with `2`.
 
 ## text
 
@@ -215,6 +250,37 @@ transform and gain. Nothing to remove reports `changed: []`.
 
 Cutting removes time, so anything timed against the old timeline is now offset:
 `cut_shifts_layers` warns once for captions and once for overlays.
+
+## scenes
+
+```
+sona scenes [--threshold 0.4] [--min 500ms] [--json]
+```
+
+Detects shot boundaries with ffmpeg's `scene` score, merges anything shorter than
+`--min` into its neighbour, and writes the result into the index:
+
+```console
+$ sona scenes
+00:00.0-00:02.0  key 00:00.2  scene 1
+00:02.0-00:02.2  key 00:02.0  scene 2
+00:02.2-00:04.2  key 00:02.4  scene 3
+```
+
+`key` is a timestamp inside the shot (10% in, capped at 300 ms) to sample for a
+thumbnail — the first frame of a cut is often a flash or a blur.
+
+- `--min` is what makes this usable: at the default 500 ms a 0.2 s flash is
+  absorbed; at `--min 100ms` it becomes its own scene.
+- `--threshold` is ffmpeg's scene score (0–1). Lower finds more cuts.
+- Results are cached in the index against the source's size and mtime, plus the
+  threshold and `--min`, so changing any of them re-detects.
+- `--json` returns `{n, start, end, keyframe}` per scene.
+
+Scenes live in the index because that is the per-source analysis file, but they
+describe the picture rather than the audio: the detection records the stat of the
+file it ran on, so a modified source is re-scanned rather than silently trusted.
+`scenes` needs an index, which needs a transcript — see `index`.
 
 ## index
 

@@ -53,6 +53,18 @@ If `ran: 0` follows a content change, the cache key is stale: that is a bug in
 costs no ffmpeg run. When a render looks wrong, the argv usually shows why in
 one line.
 
+**Dry-run before anything you would not want to explain.** Every mutating command
+takes `--dry-run` and returns the same envelope, including the resulting
+`duration` and `warnings`, without writing anything:
+
+```bash
+sona trim clip_1 --to 30s --dry-run     # see the duration and the warnings first
+sona cut clip_1 --fillers --dry-run
+```
+
+**Every warning and error carries a `fix`.** Read it: it is the command that
+clears the problem, usually with your own ids already filled in.
+
 **Do not invent flags.** `sona <command> --help` is short and authoritative; a
 guessed flag is a 5-exit-code round trip.
 
@@ -96,6 +108,19 @@ order.
 when you want the word boundary exactly as reported. Word times from ASR are
 approximate (±100ms or so), so `--pad 0` plus a tight cut is how you get a
 chopped first phoneme.
+
+## Finding the interesting part
+
+```bash
+sona index --from transcript.json --audio podcast.mp4
+sona find "that's the thing"       # word ranges
+sona scenes                        # shot boundaries, with a keyframe to sample
+sona view --range 12:30-12:50
+```
+
+`scenes` gives you cuts where the picture changes, `find` gives you cuts where the
+words are. Use both before deciding a window: a good quote that lands mid-shot is
+a worse clip than an okay quote at a shot boundary.
 
 ## When you break it
 

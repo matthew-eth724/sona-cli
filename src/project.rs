@@ -146,9 +146,11 @@ impl Project {
     pub fn duration(&self, media: &mut MediaIndex) -> Time {
         let mut total = 0i64;
         for c in &self.tracks.video {
-            if let Ok(m) = media.get(Path::new(&c.source)) {
-                total += c.out_duration(m.duration).micros();
-            }
+            let d = match media.get(Path::new(&c.source)) {
+                Ok(m) => c.out_duration(m.duration),
+                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
+            };
+            total += d.micros();
         }
         Time::from_micros(total)
     }
@@ -199,56 +201,71 @@ impl Project {
                 Ok(m) => {
                     if let Some(end) = c.src_out {
                         if end > m.duration {
-                            out.push(Diagnostic::new(
-                                "clip_past_media",
-                                format!("tracks.video[{i}]"),
-                                format!(
-                                    "{} is {} long but clip {} ends at {}",
-                                    c.source, m.duration, c.id, end
-                                ),
-                            ));
+                            out.push(
+                                Diagnostic::new(
+                                    "clip_past_media",
+                                    format!("tracks.video[{i}]"),
+                                    format!(
+                                        "{} is {} long but clip {} ends at {}",
+                                        c.source, m.duration, c.id, end
+                                    ),
+                                )
+                                .with_fix(format!("sona trim {} --to {}", c.id, m.duration)),
+                            );
                         }
                     }
                     if !m.has_video {
-                        out.push(Diagnostic::new(
-                            "clip_has_no_video",
-                            format!("tracks.video[{i}]"),
-                            format!("{} has no video stream", c.source),
-                        ));
+                        out.push(
+                            Diagnostic::new(
+                                "clip_has_no_video",
+                                format!("tracks.video[{i}]"),
+                                format!("{} has no video stream", c.source),
+                            )
+                            .with_fix(format!("sona rm {}", c.id)),
+                        );
                     }
                 }
-                Err(e) => out.push(Diagnostic::new(
-                    "media_missing",
-                    format!("tracks.video[{i}].source"),
-                    format!("{e}"),
-                )),
+                Err(e) => out.push(
+                    Diagnostic::new(
+                        "media_missing",
+                        format!("tracks.video[{i}].source"),
+                        format!("{e}"),
+                    )
+                    .with_fix(format!("sona rm {}   (or put the file back)", c.id)),
+                ),
             }
-            let span = media
-                .get(path)
-                .map(|m| c.out_duration(m.duration))
-                .unwrap_or(Time::ZERO);
+            let span = match media.get(path) {
+                Ok(m) => c.out_duration(m.duration),
+                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
+            };
             placed = Time::from_micros(placed.micros() + span.micros());
         }
         if let Some(caps) = &self.tracks.captions {
             if !Path::new(&caps.source).exists() {
-                out.push(Diagnostic::new(
-                    "captions_missing",
-                    "tracks.captions.source",
-                    format!("{} does not exist", caps.source),
-                ));
+                out.push(
+                    Diagnostic::new(
+                        "captions_missing",
+                        "tracks.captions.source",
+                        format!("{} does not exist", caps.source),
+                    )
+                    .with_fix("sona rm captions   (or put the file back)"),
+                );
             }
         }
         for (i, o) in self.tracks.overlays.iter().enumerate() {
             let Overlay::Text(t) = o;
             if t.at.end > placed && placed > Time::ZERO {
-                out.push(Diagnostic::new(
-                    "text_past_end",
-                    format!("tracks.overlays[{i}].at"),
-                    format!(
-                        "text {} ends at {} but the timeline ends at {}",
-                        t.id, t.at.end, placed
-                    ),
-                ));
+                out.push(
+                    Diagnostic::new(
+                        "text_past_end",
+                        format!("tracks.overlays[{i}].at"),
+                        format!(
+                            "text {} ends at {} but the timeline ends at {}",
+                            t.id, t.at.end, placed
+                        ),
+                    )
+                    .with_fix(format!("sona rm {}", t.id)),
+                );
             }
         }
         out
@@ -268,6 +285,13 @@ impl Clip {
     /// Duration this clip contributes to the timeline, after speed.
     pub fn out_duration(&self, media_duration: Time) -> Time {
         Time::from_secs_f64(self.source_span(media_duration).secs_f64() / self.speed)
+    }
+
+    /// The same answer without the media, when `src_out` is known. Keeps
+    /// duration and diagnostics honest for a project whose files moved.
+    pub fn out_duration_known(&self) -> Option<Time> {
+        self.src_out
+            .map(|e| Time::from_secs_f64(e.saturating_sub(self.src_in).secs_f64() / self.speed))
     }
 }
 
@@ -342,5 +366,90 @@ impl Store {
         fs::write(&tmp, json + "\n")?;
         fs::rename(&tmp, &self.path)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::media::MediaIndex;
+
+    #[test]
+    fn missing_media_names_the_command_that_fixes_it() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.video.push(Clip {
+            id: "clip_1".into(),
+            source: "/nope/gone.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: None,
+            speed: 1.0,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+        });
+        let mut media = MediaIndex::default();
+        let diags = p.diagnose(&mut media);
+        let d = diags.iter().find(|d| d.code == "media_missing").expect("a warning");
+        assert_eq!(
+            d.fix.as_deref(),
+            Some("sona rm clip_1   (or put the file back)")
+        );
+    }
+
+    #[test]
+    fn text_past_the_end_points_at_its_own_id() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        // A 9s clip, with src_out known, so the timeline has a length even
+        // though the file does not exist.
+        p.tracks.video.push(Clip {
+            id: "clip_1".into(),
+            source: "/nope/gone.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: Some(Time::from_secs_f64(9.0)),
+            speed: 1.0,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+        });
+        p.tracks.overlays.push(Overlay::Text(TextOverlay {
+            id: "text_1".into(),
+            content: "late".into(),
+            at: TimeRange::new(Time::from_secs_f64(0.0), Time::from_secs_f64(10.0)).unwrap(),
+            anchor: Anchor::Bottom,
+            size: 48,
+            color: "white".into(),
+        }));
+        let mut media = MediaIndex::default();
+        let diags = p.diagnose(&mut media);
+        let d = diags.iter().find(|d| d.code == "text_past_end").expect("a warning");
+        assert_eq!(d.fix.as_deref(), Some("sona rm text_1"));
+    }
+
+    #[test]
+    fn every_warning_carries_a_fix() {
+        // A diagnostic without a fix is a dead end for an agent.
+        let warnings = [
+            Diagnostic::new("clip_past_media", "x", "m"),
+            Diagnostic::new("clip_has_no_video", "x", "m"),
+            Diagnostic::new("media_missing", "x", "m"),
+            Diagnostic::new("captions_missing", "x", "m"),
+            Diagnostic::new("text_past_end", "x", "m"),
+        ];
+        for w in warnings {
+            let _ = w;
+        }
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.video.push(Clip {
+            id: "clip_1".into(),
+            source: "/nope/gone.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: Some(Time::from_secs_f64(9.0)),
+            speed: 1.0,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+        });
+        p.tracks.captions = Some(Captions { source: "/nope/x.srt".into(), burn: true });
+        let mut media = MediaIndex::default();
+        for d in p.diagnose(&mut media) {
+            assert!(d.fix.is_some(), "{} has no fix", d.code);
+        }
     }
 }

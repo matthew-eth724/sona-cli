@@ -13,6 +13,7 @@ proves it works. Drive the real command; never assert on an internal function.
 | [review-frames](review-frames.md) | `frames` | PNG files exist at the requested times, sheet tiled |
 | [index](index.md) | `index` `view` `find` | word count matches the transcript, ids are `w1..wN`, second index is `cached: true` |
 | [cut](cut.md) | `cut` | `saved` equals the removed spans, timeline splits into surviving spans, render length matches |
+| [scenes](scenes.md) | `scenes` | three cuts in a three-shot clip, a 0.2s flash merged at the default `--min` |
 | [history](history.md) | `history` `undo` | after undo the duration is identical to before the mutation; undo works on a corrupt document |
 | [audio-bed](audio-bed.md) | `audio` | residual RMS between with/without is well above silence |
 

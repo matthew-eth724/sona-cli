@@ -59,6 +59,15 @@ re-see the cue count.
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
+**`scenes` finds nothing, or everything.** `--threshold` is ffmpeg's scene score:
+0.4 is a normal cut, lower finds more. Sourced from a single long take, you get one
+scene and that is correct. A music video cut every beat needs a much lower
+threshold and a `--min` above the beat length.
+
+**`scenes` re-detects every run.** The cache key includes the source's size and
+mtime plus `--threshold` and `--min`. Touching the file or changing a flag
+re-scans by design.
+
 **`cut` removed nothing.** Either the transcript has no filler words and no gap
 over the threshold, or the index is for a different file (that case is an error,
 not silence). Try `--dry-run` with a lower threshold, and remember `--silences`

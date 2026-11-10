@@ -221,3 +221,47 @@ mod tests {
         assert!(p.words[0].confidence.is_some());
     }
 }
+
+#[cfg(test)]
+mod scene_tests {
+    use super::super::index::merge_scenes;
+    use crate::time::Time;
+
+    fn t(x: f64) -> Time {
+        Time::from_secs_f64(x)
+    }
+
+    #[test]
+    fn hard_cuts_become_scenes_with_keyframes() {
+        let scenes = merge_scenes(vec![t(2.0), t(4.0)], t(6.0), t(0.5));
+        assert_eq!(scenes.len(), 3);
+        assert_eq!(scenes[0].start, t(0.0));
+        assert_eq!(scenes[0].end, t(2.0));
+        assert_eq!(scenes[2].end, t(6.0));
+        // keyframe sits inside the shot, not on its first frame
+        assert!(scenes[0].keyframe > scenes[0].start);
+        assert!(scenes[0].keyframe < scenes[0].end);
+    }
+
+    #[test]
+    fn shots_under_the_floor_are_merged_away() {
+        // a 0.2s flash between two shots
+        let scenes = merge_scenes(vec![t(2.0), t(2.2)], t(6.0), t(0.5));
+        assert_eq!(scenes.len(), 2, "the flash disappears: {:?}", scenes.len());
+        assert_eq!(scenes[1].start, t(2.0));
+    }
+
+    #[test]
+    fn cuts_outside_the_file_are_ignored() {
+        let scenes = merge_scenes(vec![t(0.0), t(99.0)], t(6.0), t(0.5));
+        assert_eq!(scenes.len(), 1);
+        assert_eq!(scenes[0].end, t(6.0));
+    }
+
+    #[test]
+    fn no_cuts_is_one_scene() {
+        let scenes = merge_scenes(vec![], t(6.0), t(0.5));
+        assert_eq!(scenes.len(), 1);
+        assert_eq!(scenes[0].keyframe, t(0.3));
+    }
+}

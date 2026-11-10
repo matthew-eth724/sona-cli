@@ -51,6 +51,9 @@ enum Cmd {
         /// Padding either side of a word range.
         #[arg(long, default_value = "120ms")]
         pad: String,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Show the timeline as JSON.
     List,
@@ -66,13 +69,33 @@ enum Cmd {
         words: Option<String>,
         #[arg(long, default_value = "120ms")]
         pad: String,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Change a clip's playback speed (pitch preserved).
-    Speed { id: String, speed: f64 },
+    Speed {
+        id: String,
+        speed: f64,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Move a clip to a position (0-based).
-    Move { id: String, to: usize },
+    Move {
+        id: String,
+        to: usize,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Remove a clip.
-    Rm { id: String },
+    Rm {
+        id: String,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Add a text overlay.
     Text {
         content: String,
@@ -86,15 +109,26 @@ enum Cmd {
         size: Option<u32>,
         #[arg(long)]
         color: Option<String>,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Set a music bed played under the clips.
     Audio {
         source: PathBuf,
         #[arg(long, default_value = "0", allow_hyphen_values = true)]
         gain: f32,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Attach an SRT to burn in.
-    Caption { source: PathBuf },
+    Caption {
+        source: PathBuf,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Remove fillers and long silences from a clip, splitting it into what
     /// survives.
     Cut {
@@ -115,6 +149,17 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Detect shot boundaries and write them into the index.
+    Scenes {
+        /// ffmpeg scene score that counts as a cut.
+        #[arg(long, default_value = "0.4")]
+        threshold: f64,
+        /// Merge anything shorter than this; a flash is not a shot.
+        #[arg(long, default_value = "500ms")]
+        min: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Build the word index for a source's audio (cached by audio hash).
     Index {
         #[arg(long)]
@@ -125,6 +170,9 @@ enum Cmd {
         force: bool,
         #[arg(long)]
         language: Option<String>,
+        /// Report the result without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Print the indexed words in a range as compact text.
     View {
@@ -209,12 +257,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Add { files, from, to, speed, at, fill, words, pad } => {
+        Cmd::Add { files, from, to, speed, at, fill, words, pad, dry_run } => {
             if files.is_empty() {
                 bail!("usage: sona add <file>...");
             }
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "add")?;
+            if !dry_run {
+                crate::history::record(&store, "add")?;
+            }
             let mut media = MediaIndex::default();
             if words.is_some() && (from.is_some() || to.is_some()) {
                 bail!("usage: --words replaces --from/--to, pick one");
@@ -275,10 +325,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     "duration": dur.to_string(),
                 }));
             }
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"added": added, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"added": added}))
         }
         Cmd::List => {
             let store = Store::open(&path)?;
@@ -310,9 +357,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             ok(json!({"clips": clips, "duration": duration.to_string()}), &[]);
             Ok(())
         }
-        Cmd::Trim { id, from, to, words, pad } => {
+        Cmd::Trim { id, from, to, words, pad, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "trim")?;
+            if !dry_run {
+                crate::history::record(&store, "trim")?;
+            }
             let mut media = MediaIndex::default();
             if words.is_some() && (from.is_some() || to.is_some()) {
                 bail!("usage: --words replaces --from/--to, pick one");
@@ -365,17 +414,16 @@ fn dispatch(cli: Cli) -> Result<()> {
                     bail!("--to must be after --from");
                 }
             }
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": [id], "invalidated": 1, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
-        Cmd::Speed { id, speed } => {
+        Cmd::Speed { id, speed, dry_run } => {
             if speed <= 0.0 {
                 bail!("usage: speed must be positive");
             }
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "speed")?;
+            if !dry_run {
+                crate::history::record(&store, "speed")?;
+            }
             let mut media = MediaIndex::default();
             let clip = store
                 .project
@@ -385,14 +433,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .find(|c| c.id == id)
                 .with_context(|| format!("usage: no clip {id}"))?;
             clip.speed = speed;
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": [id], "invalidated": 1, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
-        Cmd::Move { id, to } => {
+        Cmd::Move { id, to, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "move")?;
+            if !dry_run {
+                crate::history::record(&store, "move")?;
+            }
             let mut media = MediaIndex::default();
             let pos = store
                 .project
@@ -404,14 +451,13 @@ fn dispatch(cli: Cli) -> Result<()> {
             let clip = store.project.tracks.video.remove(pos);
             let target = to.min(store.project.tracks.video.len());
             store.project.tracks.video.insert(target, clip);
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": [id], "invalidated": 2, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 2}))
         }
-        Cmd::Rm { id } => {
+        Cmd::Rm { id, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "rm")?;
+            if !dry_run {
+                crate::history::record(&store, "rm")?;
+            }
             let mut media = MediaIndex::default();
             let pos = store
                 .project
@@ -421,14 +467,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .position(|c| c.id == id)
                 .with_context(|| format!("usage: no clip {id}"))?;
             store.project.tracks.video.remove(pos);
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": [id], "invalidated": 1, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
-        Cmd::Text { content, from, to, pos, size, color } => {
+        Cmd::Text { content, from, to, pos, size, color, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "text")?;
+            if !dry_run {
+                crate::history::record(&store, "text")?;
+            }
             let mut media = MediaIndex::default();
             let at = TimeRange::new(Time::parse(&from)?, Time::parse(&to)?)?;
             let anchor = match pos.as_str() {
@@ -453,14 +498,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 t.color = c;
             }
             store.project.tracks.overlays.push(Overlay::Text(t));
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": [id], "invalidated": 1, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
-        Cmd::Audio { source, gain } => {
+        Cmd::Audio { source, gain, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "audio")?;
+            if !dry_run {
+                crate::history::record(&store, "audio")?;
+            }
             let mut media = MediaIndex::default();
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
@@ -468,14 +512,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                 source: source.to_string_lossy().to_string(),
                 gain_db: gain,
             });
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(json!({"changed": ["audio"], "invalidated": 1, "duration": duration}), &warnings);
-            Ok(())
+            finish(&mut store, &mut media, dry_run, json!({"changed": ["audio"], "invalidated": 1}))
         }
-        Cmd::Caption { source } => {
+        Cmd::Caption { source, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "caption")?;
+            if !dry_run {
+                crate::history::record(&store, "caption")?;
+            }
             let mut media = MediaIndex::default();
             let source = std::fs::canonicalize(&source)
                 .with_context(|| format!("no such file: {}", source.display()))?;
@@ -485,13 +528,12 @@ fn dispatch(cli: Cli) -> Result<()> {
                 source: source.to_string_lossy().to_string(),
                 burn: true,
             });
-            store.save()?;
-            let (duration, warnings) = after_edit(&store, &mut media);
-            ok(
-                json!({"changed": ["captions"], "cues": cues.len(), "invalidated": 1, "duration": duration}),
-                &warnings,
-            );
-            Ok(())
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({"changed": ["captions"], "cues": cues.len(), "invalidated": 1}),
+            )
         }
         Cmd::Cut { id, fillers, silences, keep, pad, dry_run } => {
             let mut store = Store::open(&path)?;
@@ -559,18 +601,41 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .map(|r| r.end.micros() - r.start.micros())
                 .sum();
 
+            let mut extra = Vec::new();
+            if store.project.tracks.captions.is_some() {
+                extra.push(
+                    crate::report::Diagnostic::new(
+                        "cut_shifts_layers",
+                        "tracks.captions",
+                        "captions were timed against the old timeline and are now offset",
+                    )
+                    .with_fix(format!("sona undo   (or re-run: sona caption {})", 
+                        store.project.tracks.captions.as_ref().map(|c| c.source.clone()).unwrap_or_default())),
+                );
+            }
+            if !store.project.tracks.overlays.is_empty() {
+                extra.push(
+                    crate::report::Diagnostic::new(
+                        "cut_shifts_layers",
+                        "tracks.overlays",
+                        "text overlays were timed against the old timeline and are now offset",
+                    )
+                    .with_fix("sona undo   (or re-add the overlays at their new times)"),
+                );
+            }
             if dry_run {
-                ok(
+                return finish_ext(
+                    &mut store,
+                    &mut media,
+                    true,
                     json!({
-                        "dry_run": true,
                         "changed": [],
                         "would_replace": id,
                         "removed": removed,
                         "saved": Time::from_micros(saved_us).to_string(),
                     }),
-                    &[],
+                    &extra,
                 );
-                return Ok(());
             }
 
             crate::history::record(&store, "cut")?;
@@ -586,38 +651,88 @@ fn dispatch(cli: Cli) -> Result<()> {
                 new_ids.push(new_id);
             }
 
-            let mut warnings = store.project.diagnose(&mut media);
-            if store.project.tracks.captions.is_some() {
-                warnings.push(crate::report::Diagnostic::new(
-                    "cut_shifts_layers",
-                    "tracks.captions",
-                    "captions were timed against the old timeline and are now offset",
-                ));
-            }
-            if !store.project.tracks.overlays.is_empty() {
-                warnings.push(crate::report::Diagnostic::new(
-                    "cut_shifts_layers",
-                    "tracks.overlays",
-                    "text overlays were timed against the old timeline and are now offset",
-                ));
-            }
-            store.save()?;
-            let duration = store.project.duration(&mut media);
-            ok(
+            finish_ext(
+                &mut store,
+                &mut media,
+                false,
                 json!({
                     "changed": [id],
                     "replaced_by": new_ids,
                     "removed": removed,
                     "saved": Time::from_micros(saved_us).to_string(),
-                    "duration": duration.to_string(),
                 }),
-                &warnings,
-            );
+                &extra,
+            )
+        }
+        Cmd::Scenes { threshold, min, json: as_json } => {
+            let store = Store::open(&path)?;
+            let idx_ref = store
+                .project
+                .tracks
+                .index
+                .as_ref()
+                .context("no_index: run `sona index --from <transcript>` first")?;
+            let source = store.resolve(&idx_ref.source);
+            let min_len = Time::parse(&min)?;
+            let idx_path = index::Index::path(&store.dir().join(".sona"), &idx_ref.audio_hash);
+            let mut idx = index::Index::load(&idx_path)?;
+
+            let stat = crate::cache::stat_token(&source);
+            let mut cached = false;
+            let scenes = match &idx.scenes {
+                Some(s) if s.source_stat == stat && (s.threshold - threshold as f32).abs() < 0.001
+                    && s.min_len == min_len =>
+                {
+                    cached = true;
+                    s.scenes.clone()
+                }
+                _ => {
+                    let cuts = detect_cuts(&source, threshold)?;
+                    let duration = crate::media::probe(&source)?.duration;
+                    let merged = index::merge_scenes(cuts, duration, min_len);
+                    idx.scenes = Some(index::Scenes {
+                        source_stat: stat,
+                        threshold: threshold as f32,
+                        min_len,
+                        scenes: merged.clone(),
+                    });
+                    idx.save(&idx_path)?;
+                    merged
+                }
+            };
+
+            if as_json {
+                let body: Vec<serde_json::Value> = scenes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| json!({
+                        "n": i + 1,
+                        "start": s.start.to_string(),
+                        "end": s.end.to_string(),
+                        "keyframe": s.keyframe.to_string(),
+                    }))
+                    .collect();
+                ok(json!({"cached": cached, "threshold": threshold, "scenes": body}), &[]);
+            } else {
+                for (i, s) in scenes.iter().enumerate() {
+                    if !crate::report::emit_line(&format!(
+                        "{}-{}  key {}  scene {}",
+                        index::clock(s.start),
+                        index::clock(s.end),
+                        index::clock(s.keyframe),
+                        i + 1
+                    )) {
+                        break;
+                    }
+                }
+            }
             Ok(())
         }
-        Cmd::Index { from, audio: audio_arg, force, language } => {
+        Cmd::Index { from, audio: audio_arg, force, language, dry_run } => {
             let mut store = Store::open(&path)?;
-            crate::history::record(&store, "index")?;
+            if !dry_run {
+                crate::history::record(&store, "index")?;
+            }
             let source = match audio_arg {
                 Some(p) => std::fs::canonicalize(&p)
                     .with_context(|| format!("no such file: {}", p.display()))?,
@@ -658,8 +773,11 @@ fn dispatch(cli: Cli) -> Result<()> {
                         language: language.or(parsed.language),
                         approximate: parsed.approximate,
                         words: parsed.words,
+                        scenes: None,
                     };
-                    idx.save(&idx_path)?;
+                    if !dry_run {
+                        idx.save(&idx_path)?;
+                    }
                     idx
                 }
             };
@@ -673,18 +791,23 @@ fn dispatch(cli: Cli) -> Result<()> {
                 words: idx.words.len(),
                 approximate: idx.approximate,
             });
-            store.save()?;
+            if !dry_run {
+                store.save()?;
+            }
             let mut warnings = Vec::new();
             if let (Some(last), dur) = (idx.words.last(), idx.audio_duration) {
                 if last.end.micros() > dur.micros() + 2_000_000 {
-                    warnings.push(crate::report::Diagnostic::new(
-                        "index_past_audio",
-                        "words[-1].end",
-                        format!(
-                            "the transcript ends at {} but the audio is only {}",
-                            last.end, dur
-                        ),
-                    ));
+                    warnings.push(
+                        crate::report::Diagnostic::new(
+                            "index_past_audio",
+                            "words[-1].end",
+                            format!(
+                                "the transcript ends at {} but the audio is only {}",
+                                last.end, dur
+                            ),
+                        )
+                        .with_fix("sona index --from <the transcript for this file> --audio <this file>"),
+                    );
                 }
             }
             ok(
@@ -952,13 +1075,43 @@ fn dispatch(cli: Cli) -> Result<()> {
     }
 }
 
-/// Mutations report the timeline *and* the diagnostics they just created: an
-/// agent that trims past the end of its source should see that immediately,
-/// not on the next `inspect`.
-fn after_edit(store: &Store, media: &mut MediaIndex) -> (serde_json::Value, Vec<crate::report::Diagnostic>) {
+/// Ends a mutation: duration, diagnostics, and a save unless this was a dry run.
+///
+/// A dry run must leave no trace — no document write, no history snapshot — so
+/// the caller is responsible for skipping `history::record`, and this skips the
+/// save. Everything else it reports is the real thing: the duration and
+/// warnings the save would have produced.
+fn finish(
+    store: &mut Store,
+    media: &mut MediaIndex,
+    dry_run: bool,
+    payload: serde_json::Value,
+) -> Result<()> {
+    finish_ext(store, media, dry_run, payload, &[])
+}
+
+/// `finish` plus warnings the command knows about that `diagnose` cannot see.
+fn finish_ext(
+    store: &mut Store,
+    media: &mut MediaIndex,
+    dry_run: bool,
+    mut payload: serde_json::Value,
+    extra: &[crate::report::Diagnostic],
+) -> Result<()> {
     let duration = store.project.duration(media);
-    let warnings = store.project.diagnose(media);
-    (json!(duration.to_string()), warnings)
+    let mut warnings = store.project.diagnose(media);
+    warnings.extend(extra.iter().cloned());
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert("duration".into(), json!(duration.to_string()));
+        if dry_run {
+            obj.insert("dry_run".into(), json!(true));
+        }
+    }
+    if !dry_run {
+        store.save()?;
+    }
+    ok(payload, &warnings);
+    Ok(())
 }
 
 fn idx_source(store: &Store) -> PathBuf {
@@ -976,6 +1129,38 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
     let ca = std::fs::canonicalize(a).unwrap_or_else(|_| a.to_path_buf());
     let cb = std::fs::canonicalize(b).unwrap_or_else(|_| b.to_path_buf());
     ca == cb
+}
+
+/// Cuts, in source time, from `select=gt(scene,T)` + `showinfo`.
+fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
+    use std::process::Command;
+    let filter = format!("select='gt(scene,{threshold})',showinfo");
+    let out = Command::new("ffmpeg")
+        .args(["-hide_banner", "-nostats", "-i"])
+        .arg(source)
+        .args(["-filter:v", &filter, "-f", "null", "-"])
+        .output()
+        .context("ffmpeg not found on PATH")?;
+    let log = String::from_utf8_lossy(&out.stderr);
+    let mut cuts = Vec::new();
+    for line in log.lines() {
+        if !line.contains("showinfo") {
+            continue;
+        }
+        if let Some(pos) = line.find("pts_time:") {
+            let rest = &line[pos + 9..];
+            let value: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+                .collect();
+            if let Ok(secs) = value.parse::<f64>() {
+                if secs >= 0.0 {
+                    cuts.push(Time::from_secs_f64(secs));
+                }
+            }
+        }
+    }
+    Ok(cuts)
 }
 
 fn project_index(store: &Store) -> Result<index::Index> {
