@@ -132,6 +132,7 @@ never information.
 | [docs/troubleshooting.md](docs/troubleshooting.md) | error code → cause → fix |
 | [docs/design.md](docs/design.md) | why it is shaped this way |
 | [docs/design-compositing.md](docs/design-compositing.md) | the compositor and keyframes design |
+| [docs/design-portable.md](docs/design-portable.md) | bundling ffmpeg and fonts so one install works anywhere |
 
 The verification skill (launch, doctor, drive, capture, cleanup, six-feature map)
 ships twice: `.claude/skills/verify/` for Claude Code and
