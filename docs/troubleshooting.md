@@ -20,6 +20,7 @@ $ splice doctor
 | `ffmpeg_failed` | 4 | one render step failed | `splice plan`, find that step, read its argv |
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |
 | `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
+| `config_loose_perms` | — (warning) | the config file is readable by other users | `chmod 600 <path>`, shown in the fix |
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
 | `no_font` | 2 | no usable font: no `fc-match`, no bundled-path font | `set SPLICE_FONT=/path/to/font.ttf`, or install one; `doctor` shows where it looked |
@@ -134,6 +135,15 @@ lookup tries `SPLICE_FONT`, then `fc-match`, then fonts that ship with the OS
 `/usr/share/fonts/truetype/dejavu/...`). `fc-match` does not exist on a clean
 Windows or macOS install, which is why the built-in paths exist. `doctor` reports
 which source won.
+
+**A key I set isn't being used.** `splice config list` shows `source` per key.
+`env` means an environment variable is overriding the file — that is deliberate,
+because CI mounts tokens as variables. `splice config path` shows whether the file
+is even where you think, and whether that directory is writable.
+
+**`config set deepgram.api_key abc123` is refused.** Keys are not accepted as
+arguments: they would land in `ps`, in shell history and in any JSON an agent
+echoes back. Pipe it (`--stdin`) or name the variable (`--from-env`).
 
 **`find` returns nothing but you can see the words.** Matching ignores case and
 punctuation but not word boundaries: `"shipf"` will not match `ship faster`, and

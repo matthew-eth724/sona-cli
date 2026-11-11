@@ -384,6 +384,11 @@ recording is indexed once no matter which container it arrives in.
 `.srt`/`.vtt` file. SRT only has cue times, so word times inside a cue are
 interpolated by character share and the index is marked `approximate: true`.
 
+`--model` records which model produced the words. It defaults to the configured
+model for the detected provider, is stored in `splice.json`, and **a change forces
+a re-index**: cached words from `nova-3` are not the words `nova-4` would return,
+and reusing them silently is the kind of cache bug this tool has already had once.
+
 `--audio` defaults to the first clip's source, then to the already-indexed
 source. The audio is downmixed to `.splice/audio/<key>.wav` on first use (deletable
 cache).
@@ -571,6 +576,52 @@ document, so `trim`, `speed`, `move`, `rm` and `transition` need no layer flag.
 The design, including the commands that will exist, is
 [design-compositing.md](design-compositing.md).
 
+## config
+
+```
+splice config set <provider>.<field> [value] [--stdin | --from-env <VAR>]
+splice config get <provider>.<field>
+splice config list
+splice config path
+splice config unset <provider>.<field>
+```
+
+Keys and model ids live in one per-user file — `$SPLICE_CONFIG`, else
+`$XDG_CONFIG_HOME/splice/config.json` / `~/.config/splice/config.json`, else
+`%APPDATA%\splice\config.json` on Windows. Never in `splice.json`: that file is
+committed and pasted into transcripts.
+
+```console
+$ echo "$GEMINI_API_KEY" | splice config set gemini.api_key --stdin
+{"ok":true,"provider":"gemini","field":"api_key","action":"set",
+ "fingerprint":"dec5895b","path":"/home/ana/.config/splice/config.json"}
+
+$ splice config set deepgram.model nova-3
+$ splice config list
+{"path":"…/config.json","exists":true,"writable":true,"providers":{
+  "gemini":{"api_key":{"set":true,"source":"env","fingerprint":"dec5895b"},
+            "model":{"value":"gemini-3.5-transcribe","source":"default"}},
+  "deepgram":{"api_key":{"set":true,"source":"file","fingerprint":"16e78059"},
+              "model":{"value":"nova-3","source":"file"}},
+  "whisper":{"api_key":{"set":false,"source":null},"model":{"value":"small","source":"default"}}}}
+```
+
+**Precedence.** A key comes from the environment first, then the file; the
+environment wins because that is what CI mounts. A model comes from `--model` on
+the command, then the file, then the pinned default (`gemini-3.5-transcribe`,
+`nova-3`, `small`). Models have no environment variable.
+
+**Secrets never round-trip.** There is no `--api-key` flag — argv lands in `ps`,
+in shell history and in whatever an agent echoes. `--stdin` and `--from-env` are
+the only ways in. `config get …api_key` returns `{set, source, fingerprint}`,
+where the fingerprint is the first 8 hex of the key's SHA-256: enough to tell two
+keys apart and to check whether the environment overrode the file, useless for
+reconstruction. The file is written `0600` in a `0700` directory, and a loosened
+file produces a `config_loose_perms` warning rather than being silently fixed.
+
+`config path` reports `{path, exists, writable, from}` — what a container with no
+writable home needs in order to understand why its key was ignored.
+
 ## history
 
 ```
@@ -623,8 +674,18 @@ splice doctor
 
 Read-only capability check: ffmpeg and ffprobe presence, `libx264`, `libass`,
 `drawtext`, the resolved font file and **where it came from** (`fc-match`,
-`SPLICE_FONT`, or a built-in OS path), and whether `GEMINI_API_KEY` /
-`DEEPGRAM_API_KEY` are visible. Never prints a secret value.
+`SPLICE_FONT`, or a built-in OS path), the config file's path / existence /
+writability, and per provider the key's state, source and fingerprint plus the
+model and its source. Never prints a secret value.
+
+```json
+"providers": {"gemini": {"key_set": true, "key_source": "env",
+                         "fingerprint": "dec5895b",
+                         "model": "gemini-3.5-transcribe", "model_source": "default"}}
+```
+
+That replaced a bare `keys_in_env: {gemini: bool}` — a boolean could not answer
+"why is it using *that* key".
 
 `doctor` exits `4` when ffmpeg or ffprobe is missing, or when the ffmpeg found
 lacks a required encoder or filter — with the install command for your OS in the

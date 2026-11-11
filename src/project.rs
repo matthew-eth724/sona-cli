@@ -165,6 +165,8 @@ pub struct IndexRef {
     pub words: usize,
     #[serde(default, skip_serializing_if = "is_false")]
     pub approximate: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -7,8 +7,6 @@
 //! written once and keyed by the audio it describes.
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use crate::time::{Time, TimeRange};
@@ -55,6 +53,10 @@ pub struct Index {
     pub language: Option<String>,
     #[serde(default)]
     pub approximate: bool,
+    /// Which model produced these words. Recorded so a model change cannot
+    /// silently reuse a cache entry built by a different one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub words: Vec<Word>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenes: Option<Scenes>,
@@ -477,6 +479,7 @@ mod tests {
             language: None,
             approximate: false,
             scenes: None,
+            model: None,
             words: vec![
                 w(0, "Hi.", 0, 500),
                 w(1, "We", 600, 700),
@@ -570,6 +573,7 @@ mod word_range_tests {
             language: None,
             approximate: false,
             scenes: None,
+            model: None,
             words: vec![
                 Word { id: "w1".into(), text: "Ship".into(), start: Time::from_secs_f64(1.0), end: Time::from_secs_f64(1.4), speaker: None, confidence: None },
                 Word { id: "w2".into(), text: "faster.".into(), start: Time::from_secs_f64(1.4), end: Time::from_secs_f64(2.0), speaker: None, confidence: None },
@@ -621,6 +625,7 @@ mod cut_tests {
             language: None,
             approximate: false,
             scenes: None,
+            model: None,
             words: vec![
                 w(1, "So", 1.0, 1.2),
                 w(2, "um,", 1.2, 1.5),      // filler

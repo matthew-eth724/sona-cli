@@ -23,6 +23,31 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+enum ConfigCmd {
+    /// Set a field: `gemini.api_key`, `gemini.model`, `deepgram.model`, ...
+    Set {
+        /// <provider>.<field>, e.g. gemini.api_key
+        key: String,
+        /// The value, for non-secret fields like a model id.
+        value: Option<String>,
+        /// Read a secret from stdin. The only way a key may be typed.
+        #[arg(long)]
+        stdin: bool,
+        /// Copy a secret out of this environment variable.
+        #[arg(long)]
+        from_env: Option<String>,
+    },
+    /// Show one field, with secrets reduced to a fingerprint.
+    Get { key: String },
+    /// Every provider: what is set, from where, and which model wins.
+    List,
+    /// Where the config file is, and whether it can be written.
+    Path,
+    /// Remove a field.
+    Unset { key: String },
+}
+
+#[derive(Subcommand)]
 enum Cmd {
     /// Create a project file.
     Init {
@@ -227,6 +252,10 @@ enum Cmd {
         force: bool,
         #[arg(long)]
         language: Option<String>,
+        /// Which model produced this transcript; recorded, and a change forces
+        /// a re-index because cached words from another model are not this one.
+        #[arg(long)]
+        model: Option<String>,
         /// Report the result without saving anything.
         #[arg(long)]
         dry_run: bool,
@@ -294,6 +323,11 @@ enum Cmd {
         true_peak: f32,
         #[arg(long, default_value = "11")]
         lra: f32,
+    },
+    /// Add a key or set a model, in a per-user config file.
+    Config {
+        #[command(subcommand)]
+        action: ConfigCmd,
     },
     /// List the snapshots taken before each mutation, newest first.
     History {
@@ -1011,7 +1045,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Index { from, audio: audio_arg, force, language, dry_run } => {
+        Cmd::Index { from, audio: audio_arg, force, language, model, dry_run } => {
             let mut store = Store::open(&path)?;
             if !dry_run {
                 crate::history::record(&store, "index")?;
@@ -1038,9 +1072,20 @@ fn dispatch(cli: Cli) -> Result<()> {
             let cache_root = store.dir().join(".splice");
             let idx_path = index::Index::path(&cache_root, &fp.sha256);
 
+            let model = model.or_else(|| {
+                let cfg = crate::config::load().unwrap_or_default();
+                let p = crate::config::Provider::parse(
+                    transcript::parse_file(&transcript_path).ok().map(|t| t.provider).as_deref().unwrap_or(""),
+                );
+                p.map(|p| crate::config::Resolved::get(p, &cfg, None, |v| std::env::var(v).ok()).model)
+            });
             let mut cached = false;
             let idx = match index::Index::load(&idx_path) {
-                Ok(existing) if !force && existing.transcript_hash == transcript_hash => {
+                Ok(existing)
+                    if !force
+                        && existing.transcript_hash == transcript_hash
+                        && existing.model == model =>
+                {
                     cached = true;
                     existing
                 }
@@ -1057,6 +1102,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         approximate: parsed.approximate,
                         words: parsed.words,
                         scenes: None,
+                        model: model.clone(),
                     };
                     if !dry_run {
                         idx.save(&idx_path)?;
@@ -1073,6 +1119,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 language: idx.language.clone(),
                 words: idx.words.len(),
                 approximate: idx.approximate,
+                model: idx.model.clone(),
             });
             if !dry_run {
                 store.save()?;
@@ -1098,6 +1145,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     "audio_hash": fp.sha256,
                     "audio_duration": idx.audio_duration.to_string(),
                     "provider": idx.provider,
+                    "model": idx.model,
                     "language": idx.language,
                     "approximate": idx.approximate,
                     "words": idx.words.len(),
@@ -1284,6 +1332,151 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
+        Cmd::Config { action } => {
+            use crate::config::{self, Provider, Secret};
+            let mut cfg = config::load()?;
+            let path = config::config_path()?;
+            match action {
+                ConfigCmd::Set { key, value, stdin, from_env } => {
+                    let (provider, field) = split_config_key(&key)?;
+                    let secret = field == "api_key";
+                    if secret {
+                        if value.is_some() {
+                            bail!(
+                                "usage: a key is never passed as an argument (it lands in ps and shell history); use --stdin or --from-env"
+                            );
+                        }
+                        let raw = match (stdin, from_env.as_deref()) {
+                            (true, None) => {
+                                use std::io::Read;
+                                let mut s = String::new();
+                                std::io::stdin().read_to_string(&mut s)?;
+                                s.trim().to_string()
+                            }
+                            (false, Some(var)) => std::env::var(var)
+                                .with_context(|| format!("{var} is not set"))?,
+                            (true, Some(_)) => bail!("usage: pass --stdin or --from-env, not both"),
+                            (false, None) => bail!(
+                                "usage: pass --stdin (pipe the key) or --from-env <VAR>"
+                            ),
+                        };
+                        if raw.trim().is_empty() {
+                            bail!("usage: the key is empty");
+                        }
+                        let fp = Secret::new(raw.clone()).fingerprint();
+                        cfg.provider_mut(provider).api_key = Some(Secret::new(raw));
+                        let written = config::save(&cfg)?;
+                        ok(
+                            json!({
+                                "provider": provider.id(), "field": "api_key", "action": "set",
+                                "fingerprint": fp, "path": written.display().to_string(),
+                                "source": from_env.map(|v| format!("env:{v}")),
+                            }),
+                            &[],
+                        );
+                    } else {
+                        let v = value.with_context(|| {
+                            format!("usage: splice config set {key} <value>")
+                        })?;
+                        cfg.provider_mut(provider).model = Some(v.clone());
+                        let written = config::save(&cfg)?;
+                        ok(
+                            json!({
+                                "provider": provider.id(), "field": "model", "action": "set",
+                                "value": v, "path": written.display().to_string(),
+                            }),
+                            &[],
+                        );
+                    }
+                }
+                ConfigCmd::Get { key } => {
+                    let (provider, field) = split_config_key(&key)?;
+                    let r = config::Resolved::get(provider, &cfg, None, |v| std::env::var(v).ok());
+                    if field == "api_key" {
+                        ok(
+                            json!({
+                                "provider": provider.id(), "field": "api_key", "secret": true,
+                                "set": r.key.is_some(),
+                                "source": r.key_source.map(origin_name),
+                                "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
+                            }),
+                            &[],
+                        );
+                    } else {
+                        ok(
+                            json!({
+                                "provider": provider.id(), "field": "model",
+                                "value": r.model, "source": origin_name(r.model_source),
+                            }),
+                            &[],
+                        );
+                    }
+                }
+                ConfigCmd::List => {
+                    let mut providers = serde_json::Map::new();
+                    for p in Provider::all() {
+                        let r = config::Resolved::get(p, &cfg, None, |v| std::env::var(v).ok());
+                        providers.insert(
+                            p.id().into(),
+                            json!({
+                                "api_key": {
+                                    "set": r.key.is_some(),
+                                    "source": r.key_source.map(origin_name),
+                                    "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
+                                },
+                                "model": {
+                                    "value": r.model,
+                                    "source": origin_name(r.model_source),
+                                },
+                            }),
+                        );
+                    }
+                    let mut warnings = Vec::new();
+                    if config::loose_perms(&path) {
+                        warnings.push(
+                            crate::report::Diagnostic::new(
+                                "config_loose_perms",
+                                "config",
+                                format!("{} is readable by other users", path.display()),
+                            )
+                            .with_fix(format!("chmod 600 {}", path.display())),
+                        );
+                    }
+                    ok(
+                        json!({
+                            "path": path.display().to_string(),
+                            "exists": path.exists(),
+                            "writable": path.parent().map(|d| !d.exists() || is_writable(d)).unwrap_or(false),
+                            "providers": providers,
+                        }),
+                        &warnings,
+                    );
+                }
+                ConfigCmd::Path => {
+                    ok(
+                        json!({
+                            "path": path.display().to_string(),
+                            "exists": path.exists(),
+                            "writable": path.parent().map(|d| !d.exists() || is_writable(d)).unwrap_or(false),
+                            "from": if std::env::var("SPLICE_CONFIG").is_ok() { "SPLICE_CONFIG" } else { "default" },
+                        }),
+                        &[],
+                    );
+                }
+                ConfigCmd::Unset { key } => {
+                    let (provider, field) = split_config_key(&key)?;
+                    let pc = cfg.provider_mut(provider);
+                    if field == "api_key" {
+                        pc.api_key = None;
+                    } else {
+                        pc.model = None;
+                    }
+                    config::save(&cfg)?;
+                    ok(json!({"provider": provider.id(), "field": field, "action": "unset"}), &[]);
+                }
+            }
+            Ok(())
+        }
         Cmd::History { limit } => {
             let project = if path.is_absolute() {
                 path.clone()
@@ -1344,9 +1537,28 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false);
-            let keys = json!({
-                "gemini": std::env::var("GEMINI_API_KEY").is_ok(),
-                "deepgram": std::env::var("DEEPGRAM_API_KEY").is_ok(),
+            // Which key and model are actually in play, and where each came from.
+            // A bare boolean could not answer "why is it using that key".
+            let cfg = crate::config::load().unwrap_or_default();
+            let cfg_path = crate::config::config_path().ok();
+            let mut providers = serde_json::Map::new();
+            for p in crate::config::Provider::all() {
+                let r = crate::config::Resolved::get(p, &cfg, None, |v| std::env::var(v).ok());
+                providers.insert(
+                    p.id().into(),
+                    json!({
+                        "key_set": r.key.is_some(),
+                        "key_source": r.key_source.map(origin_name),
+                        "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
+                        "model": r.model,
+                        "model_source": origin_name(r.model_source),
+                    }),
+                );
+            }
+            let config_block = json!({
+                "path": cfg_path.as_ref().map(|p| p.display().to_string()),
+                "exists": cfg_path.as_ref().map(|p| p.exists()).unwrap_or(false),
+                "writable": cfg_path.as_ref().and_then(|p| p.parent()).map(|d| !d.exists() || is_writable(d)),
             });
             let report = json!({
                 "ffmpeg": if caps.version.is_empty() { json!(null) } else { json!(caps.version) },
@@ -1355,7 +1567,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                 "filters": {"libass": caps.libass, "drawtext": caps.drawtext},
                 "font": font,
                 "font_source": font_source,
-                "keys_in_env": keys,
+                "config": config_block,
+                "providers": providers,
             });
 
             // A doctor that says "ok" while ffmpeg is absent is worse than no
@@ -1481,6 +1694,33 @@ fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
         }
     }
     Ok(cuts)
+}
+
+fn split_config_key(raw: &str) -> Result<(crate::config::Provider, &'static str)> {
+    let (p, field) = raw
+        .split_once('.')
+        .with_context(|| format!("usage: <provider>.<field>, e.g. gemini.api_key (got `{raw}`)"))?;
+    let provider = crate::config::Provider::parse(p)
+        .with_context(|| format!("usage: provider must be gemini, deepgram or whisper (got `{p}`)"))?;
+    let field = match field {
+        "api_key" => "api_key",
+        "model" => "model",
+        other => bail!("usage: field must be api_key or model (got `{other}`)"),
+    };
+    Ok((provider, field))
+}
+
+fn origin_name(o: crate::config::Origin) -> &'static str {
+    match o {
+        crate::config::Origin::Flag => "flag",
+        crate::config::Origin::Env => "env",
+        crate::config::Origin::File => "file",
+        crate::config::Origin::Default => "default",
+    }
+}
+
+fn is_writable(dir: &std::path::Path) -> bool {
+    std::fs::create_dir_all(dir).is_ok() && std::fs::metadata(dir).map(|m| !m.permissions().readonly()).unwrap_or(false)
 }
 
 fn install_ffmpeg_hint() -> &'static str {

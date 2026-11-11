@@ -67,6 +67,14 @@ npm as optional dependencies — nothing is downloaded at install time, and
 `npm ci --ignore-scripts` still works. Linux builds are static, so they run on
 Alpine as well as Debian.
 
+Add a key and pick a model once, then forget about it:
+
+```console
+$ echo "$GEMINI_API_KEY" | splice config set gemini.api_key --stdin
+$ splice config set deepgram.model nova-3
+$ splice config list          # set?, from where, and which model wins — never the value
+```
+
 **ffmpeg is required and is not bundled.** `splice` shells out to `ffmpeg` and
 `ffprobe`, and the build must have `libx264`, `libass` and `freetype`:
 

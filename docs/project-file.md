@@ -193,6 +193,7 @@ A pointer to the word index this project reads. The words themselves live in
 | `language` | string | optional, when the provider reported one |
 | `words` | number | count, for a cheap sanity check |
 | `approximate` | bool | omitted when false; true when timings were interpolated from SRT |
+| `model` | string | which model produced the words; omitted when unknown. A different model re-indexes rather than reusing the cache |
 
 Deleting `.splice/index/` leaves this pointer dangling, and `view`/`find` will say
 `no_index` until `splice index` runs again.
