@@ -53,10 +53,16 @@ impl Time {
             }
             return Ok(Time::from_secs_f64(total));
         }
+        // Longest suffix first: `ms` before `s`, and `m`/`h` before the bare
+        // number, because `--max-duration 10m` and `2h` are what people type.
         let (num, scale) = if let Some(x) = t.strip_suffix("ms") {
             (x, 0.001)
         } else if let Some(x) = t.strip_suffix('s') {
             (x, 1.0)
+        } else if let Some(x) = t.strip_suffix('m') {
+            (x, 60.0)
+        } else if let Some(x) = t.strip_suffix('h') {
+            (x, 3600.0)
         } else {
             (t, 1.0)
         };
@@ -190,6 +196,8 @@ mod tests {
             ("4s", 4_000_000),
             ("4.5s", 4_500_000),
             ("250ms", 250_000),
+            ("10m", 600_000_000),
+            ("2h", 7_200_000_000),
             ("00:00:04.500", 4_500_000),
             ("1:02.5", 62_500_000),
             // Gemini emits both shapes for the same field.

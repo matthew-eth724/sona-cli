@@ -21,6 +21,12 @@ $ splice doctor
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |
 | `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
 | `config_loose_perms` | — (warning) | the config file is readable by other users | `chmod 600 <path>`, shown in the fix |
+| `asr_no_key` | 2 | no provider has a key | `splice config set gemini.api_key --stdin` (or deepgram) |
+| `asr_key_invalid` | 2 | the provider rejected the key | check `splice config list`: an env var may be overriding the file |
+| `asr_rate_limited` | 2 | 429 from the provider | wait, or use the other provider |
+| `asr_over_limit` | 2 | audio longer than `--max-duration` | `--yes`, or `--max-duration 20m` |
+| `asr_unavailable` | 2 | provider 5xx or the network failed | retry; the transcript cache means a retry re-uploads nothing it already has |
+| `asr_unreadable` | 2 | the provider answered with a shape splice does not know | report it with the model id |
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
 | `no_font` | 2 | no usable font: no `fc-match`, no bundled-path font | `set SPLICE_FONT=/path/to/font.ttf`, or install one; `doctor` shows where it looked |
@@ -128,6 +134,15 @@ wants the final render. Run the matching `render` first.
 **The project is unreadable and nothing opens.** `splice undo`. It restores the
 last snapshot without parsing the broken file. If that fails, the previous
 document is still at `.splice/history/<seq>.json` under the `project` key.
+
+**`transcribe` says `asr_no_key` although you set a key.** `splice config list`
+shows the resolved source per provider. A key in a *project* file is never read —
+there is no such field on purpose — and an empty environment variable does not
+count, so `GEMINI_API_KEY=` falls back to the file.
+
+**`transcribe` returns `cached: true` and never calls the API.** That is the
+cache working: keyed by audio, provider, model and language. Change the model or
+use a different source to force a call, or delete `.splice/asr/`.
 
 **Text or captions fail with `no_font`, but the rest of the tool works.** Font
 lookup tries `SPLICE_FONT`, then `fc-match`, then fonts that ship with the OS

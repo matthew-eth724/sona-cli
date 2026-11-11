@@ -61,6 +61,53 @@ pub fn fingerprint(store: &Store, source: &Path) -> Result<Fingerprint> {
     })
 }
 
+/// The bytes to upload: 16 kHz mono mp3 at 64k. Ten minutes is about 4.8 MB,
+/// which stays under Gemini's 20 MB inline limit and is small enough that an
+/// agent's whole session can be transcribed without thinking about bandwidth.
+///
+/// Separate from `fingerprint` (which extracts lossless wav for hashing) because
+/// the hash must be of the audio, not of a compressed rendering of it.
+pub struct AsrAudio {
+    pub path: PathBuf,
+    pub sha256: String,
+}
+
+pub fn asr_audio(store: &Store, source: &Path) -> Result<AsrAudio> {
+    if !source.exists() {
+        bail!("media_missing: {} does not exist", source.display());
+    }
+    let stat = crate::cache::stat_token(source);
+    let key = crate::cache::hash(&[stat, "asr16k64".into()]);
+    let path = store
+        .dir()
+        .join(".splice")
+        .join("asr")
+        .join(format!("{key}.mp3"));
+    if !path.exists() {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut inv = Invocation::new();
+        inv.input(source);
+        inv.push("-vn")
+            .push("-ac")
+            .push("1")
+            .push("-ar")
+            .push(SAMPLE_RATE.to_string())
+            .push("-c:a")
+            .push("libmp3lame")
+            .push("-b:a")
+            .push("64k")
+            .push(arg(&path));
+        crate::ffmpeg::run(&inv, std::time::Duration::from_secs(600))
+            .with_context(|| format!("extracting audio from {}", source.display()))?;
+    }
+    Ok(AsrAudio {
+        sha256: sha256_file(&path)?,
+        path,
+    })
+}
+
 pub fn sha256_file(path: &Path) -> Result<String> {
     let mut f = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();

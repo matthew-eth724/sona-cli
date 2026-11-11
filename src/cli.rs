@@ -242,6 +242,36 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Transcribe a source's audio and attach the captions.
+    ///
+    /// Calls the provider chosen by `--provider`, or the first one configured.
+    /// Needs a key: `splice config set gemini.api_key --stdin`.
+    Transcribe {
+        /// gemini or deepgram. Without it, the first configured provider wins.
+        #[arg(long)]
+        provider: Option<String>,
+        /// Overrides the configured model for this call only.
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        language: Option<String>,
+        /// Defaults to the first clip's source.
+        #[arg(long)]
+        audio: Option<PathBuf>,
+        /// Confirm a transcription longer than the limit.
+        #[arg(long)]
+        yes: bool,
+        /// Defaults to 10 minutes.
+        #[arg(long, default_value = "10m")]
+        max_duration: String,
+        /// Attach the captions to the project (default). `--no-caption` only
+        /// writes the SRT.
+        #[arg(long)]
+        no_caption: bool,
+        /// Report what would be sent, without sending it.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Build the word index for a source's audio (cached by audio hash).
     Index {
         #[arg(long)]
@@ -1045,6 +1075,170 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
+        Cmd::Transcribe { provider, model, language, audio: audio_arg, yes, max_duration, no_caption, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let cfg = crate::config::load()?;
+            let env = |v: &str| std::env::var(v).ok();
+            let flagged = match &provider {
+                Some(p) => Some(
+                    crate::config::Provider::parse(p)
+                        .with_context(|| format!("usage: --provider gemini|deepgram, got `{p}`"))?,
+                ),
+                None => None,
+            };
+            let (chosen, resolved) = crate::asr::choose(flagged, &cfg, env)?;
+            let model = model.unwrap_or(resolved.model.clone());
+
+            let source = match audio_arg {
+                Some(p) => std::fs::canonicalize(&p)
+                    .with_context(|| format!("no such file: {}", p.display()))?,
+                None => {
+                    let first = store
+                        .project
+                        .main_layer()
+                        .and_then(|l| l.clips.first())
+                        .context("usage: no clips yet; pass --audio <file>")?;
+                    store.resolve(&first.source)
+                }
+            };
+            let mut media = MediaIndex::default();
+            let duration = media.get(&source)?.duration;
+            let limit = Time::parse(&max_duration)?;
+            crate::asr::check_duration(duration, yes, limit)?;
+
+            let audio = crate::audio::asr_audio(&store, &source)?;
+            let bytes = std::fs::read(&audio.path)?;
+            let key = crate::cache::hash(&[
+                audio.sha256.clone(),
+                chosen.id().into(),
+                model.clone(),
+                language.clone().unwrap_or_default(),
+            ]);
+
+            if dry_run {
+                ok(
+                    json!({
+                        "dry_run": true,
+                        "provider": chosen.id(),
+                        "model": model,
+                        "language": language,
+                        "audio": audio.path.display().to_string(),
+                        "bytes": bytes.len(),
+                        "duration": duration.to_string(),
+                        "endpoint": crate::asr::endpoint(chosen),
+                        "key_source": resolved.key_source.map(origin_name),
+                        "cache_key": key,
+                    }),
+                    &[],
+                );
+                return Ok(());
+            }
+
+            let transcript_path = store
+                .dir()
+                .join(".splice")
+                .join("asr")
+                .join(format!("{key}.json"));
+            let mut cached = false;
+            let parsed = match index::Index::load(&transcript_path) {
+                Ok(existing) => {
+                    cached = true;
+                    crate::transcript::Parsed {
+                        words: existing.words.clone(),
+                        provider: existing.provider.clone(),
+                        language: existing.language.clone(),
+                        approximate: existing.approximate,
+                    }
+                }
+                Err(_) => {
+                    let secret = resolved
+                        .key
+                        .as_ref()
+                        .context("asr_no_key: no key resolved for this provider")?;
+                    // No prose wrapper: report::fail_from classifies on the
+                    // leading `asr_*` code, and a context layer hides it.
+                    crate::asr::transcribe(chosen, &model, language.as_deref(), &bytes, secret)?
+                }
+            };
+
+            let mut words = parsed.words.clone();
+            index::assign_ids(&mut words);
+            let idx = index::Index {
+                version: index::VERSION,
+                audio_hash: audio.sha256.clone(),
+                audio_duration: duration,
+                transcript_hash: key.clone(),
+                provider: parsed.provider.clone(),
+                language: language.clone().or(parsed.language.clone()),
+                approximate: parsed.approximate,
+                scenes: None,
+                model: Some(model.clone()),
+                words,
+            };
+
+            if !dry_run {
+                crate::history::record(&store, "transcribe")?;
+                idx.save(&transcript_path)?;
+            }
+
+            // Captions from the same words, so the SRT and the index cannot drift.
+            let cues: Vec<(Time, Time, String)> = idx
+                .utterances()
+                .into_iter()
+                .map(|u| (u.start, u.end, u.text))
+                .collect();
+            let srt = crate::caption::to_srt(&cues);
+            let srt_path = transcript_path.with_extension("srt");
+            if !dry_run {
+                std::fs::write(&srt_path, &srt)?;
+            }
+
+            let mut warnings: Vec<crate::report::Diagnostic> = Vec::new();
+            if !no_caption {
+                store.project.tracks.captions = Some(crate::project::Captions {
+                    source: srt_path.display().to_string(),
+                    burn: true,
+                });
+            }
+            store.project.tracks.index = Some(crate::project::IndexRef {
+                audio_hash: audio.sha256.clone(),
+                source: source.display().to_string(),
+                transcript: transcript_path.display().to_string(),
+                provider: idx.provider.clone(),
+                language: idx.language.clone(),
+                words: idx.words.len(),
+                approximate: idx.approximate,
+                model: Some(model.clone()),
+            });
+            if let Some(bed) = &store.project.tracks.audio {
+                if bed.duck.is_some() {
+                    warnings.push(
+                        crate::report::Diagnostic::new(
+                            "duck_stale",
+                            "tracks.audio.duck",
+                            "the word times changed; duck spans were mapped against the old ones",
+                        )
+                        .with_fix("sona duck"),
+                    );
+                }
+            }
+            finish_ext(
+                &mut store,
+                &mut media,
+                false,
+                json!({
+                    "provider": idx.provider,
+                    "model": model,
+                    "language": idx.language,
+                    "words": idx.words.len(),
+                    "cues": cues.len(),
+                    "cached": cached,
+                    "captions": if no_caption { json!(null) } else { json!(srt_path.display().to_string()) },
+                    "index": transcript_path.display().to_string(),
+                }),
+                &warnings,
+            )
+        }
         Cmd::Index { from, audio: audio_arg, force, language, model, dry_run } => {
             let mut store = Store::open(&path)?;
             if !dry_run {
@@ -1555,6 +1749,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                     }),
                 );
             }
+            let default_provider = crate::asr::choose(None, &cfg, |v| std::env::var(v).ok())
+                .map(|(p, _)| p.id().to_string())
+                .ok();
             let config_block = json!({
                 "path": cfg_path.as_ref().map(|p| p.display().to_string()),
                 "exists": cfg_path.as_ref().map(|p| p.exists()).unwrap_or(false),
@@ -1568,6 +1765,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 "font": font,
                 "font_source": font_source,
                 "config": config_block,
+                "default_provider": default_provider,
                 "providers": providers,
             });
 

@@ -18,6 +18,20 @@ pub struct Parsed {
     pub approximate: bool,
 }
 
+/// Parses an already-fetched provider response. `parse_file` is the same thing
+/// plus the file handling, so a live API reply and a saved fixture take one path.
+pub fn parse_value(v: &Value) -> Result<Parsed> {
+    if v.get("steps").is_some() {
+        from_gemini(v)
+    } else if v.get("results").is_some() {
+        from_deepgram(v)
+    } else {
+        bail!(
+            "unrecognised transcript: expected a Gemini `steps` or Deepgram `results` response"
+        )
+    }
+}
+
 pub fn parse_file(path: &Path) -> Result<Parsed> {
     let ext = path
         .extension()
@@ -31,16 +45,7 @@ pub fn parse_file(path: &Path) -> Result<Parsed> {
                 .with_context(|| format!("reading {}", path.display()))?;
             let v: Value = serde_json::from_str(&raw)
                 .with_context(|| format!("{} is not valid JSON", path.display()))?;
-            if v.get("steps").is_some() {
-                from_gemini(&v)
-            } else if v.get("results").is_some() {
-                from_deepgram(&v)
-            } else {
-                bail!(
-                    "unrecognised transcript in {}: expected a Gemini `steps` or Deepgram `results` response",
-                    path.display()
-                )
-            }
+            parse_value(&v).with_context(|| format!("reading {}", path.display()))
         }
         other => bail!("unsupported transcript type `{other}`: pass .json, .srt or .vtt"),
     }

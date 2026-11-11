@@ -82,6 +82,21 @@ worth it between two halves of one sentence.
 **Do not invent flags.** `splice <command> --help` is short and authoritative; a
 guessed flag is a 5-exit-code round trip.
 
+## Making captions
+
+If the machine has a key configured, `splice transcribe` does the whole thing —
+audio extraction, the call, the index, the SRT, and attaching it:
+
+```bash
+splice transcribe --dry-run     # what would be sent, and to which endpoint
+splice transcribe               # 3 s for a minute of audio, then cached
+splice render -o out.mp4        # captions burned
+```
+
+Without a key, `splice index --from <transcript.json>` still works: fetch the
+transcript however you like and hand it over. The parsers are the same ones the
+live call uses.
+
 ## Reading a long recording
 
 Do not dump a transcript into context. Index it once, then ask narrow questions:

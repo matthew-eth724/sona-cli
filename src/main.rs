@@ -1,4 +1,5 @@
 //! splice — a video editing CLI for agents.
+mod asr;
 mod audio;
 mod cache;
 mod config;

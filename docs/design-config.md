@@ -1,6 +1,7 @@
 # Keys and model configuration — design
 
-Status: **storage built; the call that consumes it is next.**
+Status: **built.** Storage and the call that consumes it both ship in 0.1.x;
+`splice transcribe` is the third consumer the design promised.
 
 ## Problem
 
@@ -178,9 +179,25 @@ app, wrong for this one: no headless story, nothing to inspect in CI, and
    explicit `default_provider` in the file? Today nothing reads it, so it is not
    in the file.
 
+## Built, and what changed on contact
+
+The call is `splice transcribe`, not `caption auto`: `caption <file>` attaches an
+SRT and `transcribe` creates one, so a new verb beat overloading an existing one.
+
+Four things a real call taught that the design did not know:
+
+1. **Gemini answers errors with a JSON array**, not an object — `[{ "error": … }]`.
+   Parsing for an object silently produced an empty message.
+2. **A prose `with_context("transcribing with …")` hides the error code**, because
+   the classifier reads the first `: ` segment. Errors now start with their
+   `asr_*` code and mention the provider inside.
+3. **TLS needs a C compiler on musl.** `ring` fails to build without `musl-gcc`,
+   which is why CI installs `musl-tools`; the static binary grew 100 kB.
+4. **`10m` and `2h` had to become valid durations** before `--max-duration 10m`
+   could mean anything.
+
 ## Next implementation step
 
-`caption auto --provider <p> [--model] [--language] [--yes] [--max-duration]`:
-normalise the audio to 16 kHz mono, call the provider, hand the response to the
-existing `src/transcript.rs` parsers, cache it in `.splice/asr/`, and write the
-index. That is the commit that makes the key file do real work.
+Wire whisper: it is an external binary (`whisper-cli`), so it needs a path, a
+subprocess call, and the same `Transcript` output. Everything downstream already
+takes it.

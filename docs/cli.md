@@ -291,6 +291,53 @@ How the envelope is built:
 Every clip must be cut from the file the index describes, or there is no honest
 mapping and the command refuses.
 
+## transcribe
+
+```
+splice transcribe [--provider gemini|deepgram] [--model <id>] [--language <code>]
+                  [--audio <file>] [--yes] [--max-duration 10m]
+                  [--no-caption] [--dry-run]
+```
+
+Calls the provider and attaches the captions. This is what a key is for: it
+normalises the audio, uploads it, parses the reply with the same code that reads
+saved transcripts, writes the index and an SRT, and sets `tracks.captions` so the
+next `render` burns them.
+
+```console
+$ splice transcribe --dry-run
+{"provider":"gemini","model":"gemini-3.5-transcribe","audio":".splice/asr/…mp3",
+ "bytes":481451,"duration":"00:01:00.239","cache_key":"07a3d28f…","endpoint":"…"}
+
+$ splice transcribe
+{"ok":true,"provider":"gemini","model":"gemini-3.5-transcribe","words":122,
+ "cues":20,"cached":false,"captions":".splice/asr/07a3d28f….srt",
+ "index":".splice/asr/07a3d28f….json","duration":"00:01:00.239"}
+```
+
+- **Provider**: `--provider`, else the first one with a key, else `asr_no_key`
+  naming both `config set` commands. `whisper` is refused: it is an external
+  binary, not an HTTP endpoint.
+- **Model**: `--model`, else the configured one, else the pinned default.
+- **Audio**: `--audio`, else the first clip's source. Downmixed to mono 16 kHz
+  mp3 at 64 kbit — ten minutes is about 4.8 MB, comfortably inside Gemini's 20 MB
+  inline limit.
+- **Cap**: audio longer than `--max-duration` (default `10m`) is refused with
+  `asr_over_limit` unless `--yes`. The check runs *before* the upload, so a
+  refusal costs nothing.
+- **Cache**: `.splice/asr/<hash>.json` keyed by audio hash + provider + model +
+  language. A second run is `cached: true` and makes no request. Different model
+  or provider, different entry.
+- **Captions**: the SRT is built from the same words as the index, so the two
+  cannot disagree. `--no-caption` writes the SRT and leaves the project alone.
+- **`duck_stale`**: if ducking is configured, new word times invalidate the spans
+  it mapped. The fix line says `sona duck`.
+
+Failures are classified so a caller can act without parsing prose: `asr_no_key`,
+`asr_key_invalid` (Gemini answers a bad key with **400**, not 401 — matched on its
+`API_KEY_INVALID` reason), `asr_bad_request`, `asr_rate_limited`,
+`asr_too_large`, `asr_unavailable`, `asr_unreadable`.
+
 ## caption
 
 ```

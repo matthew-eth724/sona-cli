@@ -7,7 +7,7 @@ project file, render it with ffmpeg, look at the result as PNGs.
 $ splice init --size 1080x1920 --fps 30
 $ splice add intro.mp4
 $ splice add demo.webm --from 12s --to 28s --speed 1.5
-$ splice index --from transcript.json --audio podcast.mp4
+$ splice transcribe                      # calls the provider, attaches captions
 $ splice find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship faster] …
 $ splice add podcast.mp4 --words w118-w126
 $ splice cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
@@ -67,7 +67,7 @@ npm as optional dependencies — nothing is downloaded at install time, and
 `npm ci --ignore-scripts` still works. Linux builds are static, so they run on
 Alpine as well as Debian.
 
-Add a key and pick a model once, then forget about it:
+Add a key and pick a model once, then `splice transcribe` uses it:
 
 ```console
 $ echo "$GEMINI_API_KEY" | splice config set gemini.api_key --stdin
@@ -108,7 +108,7 @@ required encoder, rather than letting you find out at render time.
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
 | picture | `text` `image` `transition` |
 | sound | `audio` `duck` `caption` |
-| read | `index` `view` `find` `scenes` |
+| read | `transcribe` `index` `view` `find` `scenes` |
 | tighten | `cut` |
 | output | `plan` `render` `frames` |
 | safety | `history` `undo` |
@@ -174,10 +174,9 @@ script paths; `tools/check-skill-mirror.sh` fails when they drift.
 footage — including an 8-minute 4:3 source at 23.976 fps, which is where the
 retiming-order and preview-encoder bugs were found.
 
-**Not implemented, and not documented as if it were:** automatic transcription
-(the index reads a transcript you provide; the provider formats are pinned from
-live Gemini and Deepgram responses, but `splice` does not call them yet),
-multi-track compositing and keyframes (the document models layers and camera keys
+**Not implemented, and not documented as if it were:** transcription through
+whisper (Gemini and Deepgram are wired; whisper is an external binary and
+`--provider whisper` says so), multi-track compositing and keyframes (the document models layers and camera keys
 and refuses to render them — see `design-compositing.md`), and bundled ffmpeg
 (see `design-portable.md`).
 
