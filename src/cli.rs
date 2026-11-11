@@ -1161,6 +1161,29 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             };
 
+            if parsed.words.is_empty() {
+                // Silence is a valid answer from every provider; say so instead
+                // of writing an empty index and an empty subtitle file.
+                ok(
+                    json!({
+                        "provider": chosen.id(),
+                        "model": model,
+                        "words": 0,
+                        "cues": 0,
+                        "cached": cached,
+                        "captions": null,
+                        "speech": false,
+                    }),
+                    &[crate::report::Diagnostic::new(
+                        "asr_no_speech",
+                        "audio",
+                        "the provider found no speech in this audio",
+                    )
+                    .with_fix("check the source, or pass --audio with the right file")],
+                );
+                return Ok(());
+            }
+
             let mut words = parsed.words.clone();
             index::assign_ids(&mut words);
             let idx = index::Index {

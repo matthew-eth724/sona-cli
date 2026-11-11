@@ -333,6 +333,11 @@ $ splice transcribe
 - **`duck_stale`**: if ducking is configured, new word times invalidate the spans
   it mapped. The fix line says `sona duck`.
 
+Silence is a valid answer, not an error: a provider that finds no speech
+returns `{"words":0,"speech":false}` with an `asr_no_speech` warning and attaches
+nothing. Gemini signals it by omitting `steps` entirely from a completed
+interaction.
+
 Failures are classified so a caller can act without parsing prose: `asr_no_key`,
 `asr_key_invalid` (Gemini answers a bad key with **400**, not 401 — matched on its
 `API_KEY_INVALID` reason), `asr_bad_request`, `asr_rate_limited`,

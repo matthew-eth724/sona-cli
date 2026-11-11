@@ -44,6 +44,10 @@ $SONA transcribe | jq '.cached'              # true: no request the second time
   exit code is 2.
 - Captions and the index come from one set of words, so an SRT that disagrees with
   `view` would mean a bug, not a stale file.
+- **Silence is not a failure.** A sine tone or a silent clip returns
+  `{"words":0,"speech":false}` with an `asr_no_speech` warning and attaches
+  nothing. Use that as the offline-ish live test, since it needs a key but no
+  real speech.
 - `.splice/asr/*.mp3` is the extracted 16 kHz mono audio; it is cache, and the
   transcript cache is keyed to it.
 - Without a key nothing here is testable end to end. `--dry-run` plus the

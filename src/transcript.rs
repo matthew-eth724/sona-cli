@@ -25,6 +25,17 @@ pub fn parse_value(v: &Value) -> Result<Parsed> {
         from_gemini(v)
     } else if v.get("results").is_some() {
         from_deepgram(v)
+    } else if v.get("status").and_then(|s| s.as_str()) == Some("completed") {
+        // A completed Gemini interaction with no `steps` is audio with no
+        // speech: measured on five seconds of a sine tone, the whole body is
+        // 558 bytes with `total_output_tokens: 0`. That is an answer, not a
+        // parse failure.
+        Ok(Parsed {
+            words: Vec::new(),
+            provider: "gemini".into(),
+            language: None,
+            approximate: false,
+        })
     } else {
         bail!(
             "unrecognised transcript: expected a Gemini `steps` or Deepgram `results` response"
@@ -97,9 +108,7 @@ fn from_gemini(v: &Value) -> Result<Parsed> {
             }
         }
     }
-    if words.is_empty() {
-        bail!("gemini transcript has no word annotations (was timestamp_granularities set?)");
-    }
+    // No annotations inside a present `steps` array is also "no speech".
     Ok(Parsed {
         words,
         provider: "gemini".into(),
@@ -139,9 +148,6 @@ fn from_deepgram(v: &Value) -> Result<Parsed> {
         let speaker = w.get("speaker").and_then(|s| s.as_u64()).map(|s| s as u32);
         let confidence = w.get("confidence").and_then(|c| c.as_f64()).map(|c| c as f32);
         words.push(word(text.to_string(), start, end, speaker, confidence));
-    }
-    if words.is_empty() {
-        bail!("deepgram transcript has no words");
     }
     Ok(Parsed {
         words,
@@ -215,6 +221,23 @@ mod tests {
         let p = parse_file(&fixture("gemini-diarized.json")).unwrap();
         assert_eq!(p.words[0].speaker, Some(0));
         assert_eq!(p.words[1].speaker, Some(1));
+    }
+
+    #[test]
+    fn a_completed_interaction_with_no_steps_means_no_speech() {
+        let v: Value = serde_json::from_str(
+            r#"{"status":"completed","usage":{"total_output_tokens":0}}"#,
+        )
+        .unwrap();
+        let p = parse_value(&v).unwrap();
+        assert!(p.words.is_empty());
+        assert_eq!(p.provider, "gemini");
+    }
+
+    #[test]
+    fn something_unrelated_is_still_an_error() {
+        let v: Value = serde_json::from_str(r#"{"error":{"code":400}}"#).unwrap();
+        assert!(parse_value(&v).is_err());
     }
 
     #[test]

@@ -26,6 +26,7 @@ $ splice doctor
 | `asr_rate_limited` | 2 | 429 from the provider | wait, or use the other provider |
 | `asr_over_limit` | 2 | audio longer than `--max-duration` | `--yes`, or `--max-duration 20m` |
 | `asr_unavailable` | 2 | provider 5xx or the network failed | retry; the transcript cache means a retry re-uploads nothing it already has |
+| `asr_no_speech` | — (warning) | the provider found no words | check you pointed at the right audio |
 | `asr_unreadable` | 2 | the provider answered with a shape splice does not know | report it with the model id |
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
