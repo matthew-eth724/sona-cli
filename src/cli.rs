@@ -1446,7 +1446,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         json!({
                             "path": path.display().to_string(),
                             "exists": path.exists(),
-                            "writable": path.parent().map(|d| !d.exists() || is_writable(d)).unwrap_or(false),
+                            "writable": path.parent().map(|d| is_writable(d)).unwrap_or(false),
                             "providers": providers,
                         }),
                         &warnings,
@@ -1457,7 +1457,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         json!({
                             "path": path.display().to_string(),
                             "exists": path.exists(),
-                            "writable": path.parent().map(|d| !d.exists() || is_writable(d)).unwrap_or(false),
+                            "writable": path.parent().map(|d| is_writable(d)).unwrap_or(false),
                             "from": if std::env::var("SPLICE_CONFIG").is_ok() { "SPLICE_CONFIG" } else { "default" },
                         }),
                         &[],
@@ -1558,7 +1558,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let config_block = json!({
                 "path": cfg_path.as_ref().map(|p| p.display().to_string()),
                 "exists": cfg_path.as_ref().map(|p| p.exists()).unwrap_or(false),
-                "writable": cfg_path.as_ref().and_then(|p| p.parent()).map(|d| !d.exists() || is_writable(d)),
+                "writable": cfg_path.as_ref().and_then(|p| p.parent()).map(|d| is_writable(d)),
             });
             let report = json!({
                 "ffmpeg": if caps.version.is_empty() { json!(null) } else { json!(caps.version) },
@@ -1719,8 +1719,16 @@ fn origin_name(o: crate::config::Origin) -> &'static str {
     }
 }
 
+/// Answers "could a config be written here", by trying the one thing that
+/// proves it. The previous version short-circuited on `!dir.exists()`, so a home
+/// that does not exist and cannot be created reported itself writable.
 fn is_writable(dir: &std::path::Path) -> bool {
-    std::fs::create_dir_all(dir).is_ok() && std::fs::metadata(dir).map(|m| !m.permissions().readonly()).unwrap_or(false)
+    match std::fs::create_dir_all(dir) {
+        Ok(()) => std::fs::metadata(dir)
+            .map(|m| !m.permissions().readonly())
+            .unwrap_or(false),
+        Err(_) => false,
+    }
 }
 
 fn install_ffmpeg_hint() -> &'static str {
