@@ -7,7 +7,7 @@ project file, render it with ffmpeg, look at the result as PNGs.
 $ splice init --size 1080x1920 --fps 30
 $ splice add intro.mp4
 $ splice add demo.webm --from 12s --to 28s --speed 1.5
-$ splice transcribe                      # calls the provider, attaches captions
+$ splice transcribe                      # calls the provider, writes captions.srt
 $ splice find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship faster] …
 $ splice add podcast.mp4 --words w118-w126
 $ splice cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
@@ -67,7 +67,9 @@ npm as optional dependencies — nothing is downloaded at install time, and
 `npm ci --ignore-scripts` still works. Linux builds are static, so they run on
 Alpine as well as Debian.
 
-Add a key and pick a model once, then `splice transcribe` uses it:
+Add a key and pick a model once, then `splice transcribe` writes `captions.srt`
+(attaching it for burn-in is a separate step — `splice caption captions.srt`, or
+`--attach`):
 
 ```console
 $ echo "$GEMINI_API_KEY" | splice config set gemini.api_key --stdin

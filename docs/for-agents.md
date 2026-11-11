@@ -90,7 +90,8 @@ audio extraction, the call, the index, the SRT, and attaching it:
 ```bash
 splice transcribe --dry-run     # what would be sent, and to which endpoint
 splice transcribe               # 3 s for a minute of audio, then cached
-splice render -o out.mp4        # captions burned
+splice caption captions.srt     # attach for burn-in — transcribe does not
+splice render -o out.mp4
 ```
 
 Without a key, `splice index --from <transcript.json>` still works: fetch the

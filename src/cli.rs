@@ -264,10 +264,13 @@ enum Cmd {
         /// Defaults to 10 minutes.
         #[arg(long, default_value = "10m")]
         max_duration: String,
-        /// Attach the captions to the project (default). `--no-caption` only
-        /// writes the SRT.
+        /// Where to write the subtitles, relative to the project.
+        #[arg(long, default_value = "captions.srt")]
+        srt: PathBuf,
+        /// Also attach them for burn-in. Off by default: making captions and
+        /// burning them into the picture are separate decisions.
         #[arg(long)]
-        no_caption: bool,
+        attach: bool,
         /// Report what would be sent, without sending it.
         #[arg(long)]
         dry_run: bool,
@@ -1075,7 +1078,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Transcribe { provider, model, language, audio: audio_arg, yes, max_duration, no_caption, dry_run } => {
+        Cmd::Transcribe { provider, model, language, audio: audio_arg, yes, max_duration, srt, attach, dry_run } => {
             let mut store = Store::open(&path)?;
             let cfg = crate::config::load()?;
             let env = |v: &str| std::env::var(v).ok();
@@ -1210,14 +1213,18 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .into_iter()
                 .map(|u| (u.start, u.end, u.text))
                 .collect();
-            let srt = crate::caption::to_srt(&cues);
-            let srt_path = transcript_path.with_extension("srt");
+            // Subtitles go beside the project, not into `.splice/`: the cache is
+            // documented as deletable, and a caption file the project points at
+            // must not be.
+            let srt_path = store.resolve(&srt.to_string_lossy());
+            let srt_body = crate::caption::to_srt(&cues);
             if !dry_run {
-                std::fs::write(&srt_path, &srt)?;
+                std::fs::write(&srt_path, &srt_body)
+                    .with_context(|| format!("writing {}", srt_path.display()))?;
             }
 
             let mut warnings: Vec<crate::report::Diagnostic> = Vec::new();
-            if !no_caption {
+            if attach {
                 store.project.tracks.captions = Some(crate::project::Captions {
                     source: srt_path.display().to_string(),
                     burn: true,
@@ -1256,7 +1263,9 @@ fn dispatch(cli: Cli) -> Result<()> {
                     "words": idx.words.len(),
                     "cues": cues.len(),
                     "cached": cached,
-                    "captions": if no_caption { json!(null) } else { json!(srt_path.display().to_string()) },
+                    "captions": srt_path.display().to_string(),
+                    "attached": attach,
+                    "next": if attach { json!(null) } else { json!(format!("splice caption {}", srt_path.display())) },
                     "index": transcript_path.display().to_string(),
                 }),
                 &warnings,

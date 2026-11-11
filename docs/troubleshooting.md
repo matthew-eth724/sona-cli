@@ -136,6 +136,9 @@ wants the final render. Run the matching `render` first.
 last snapshot without parsing the broken file. If that fails, the previous
 document is still at `.splice/history/<seq>.json` under the `project` key.
 
+**`transcribe` worked but the render has no captions.** It writes the file, it
+does not attach it. `splice caption captions.srt`, or pass `--attach` next time.
+
 **`transcribe` says `asr_no_key` although you set a key.** `splice config list`
 shows the resolved source per provider. A key in a *project* file is never read —
 there is no such field on purpose — and an empty environment variable does not

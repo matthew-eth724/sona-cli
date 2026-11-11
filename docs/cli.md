@@ -296,13 +296,28 @@ mapping and the command refuses.
 ```
 splice transcribe [--provider gemini|deepgram] [--model <id>] [--language <code>]
                   [--audio <file>] [--yes] [--max-duration 10m]
-                  [--no-caption] [--dry-run]
+                  [--srt captions.srt] [--attach] [--dry-run]
 ```
 
-Calls the provider and attaches the captions. This is what a key is for: it
+Calls the provider and **writes the subtitles**. This is what a key is for: it
 normalises the audio, uploads it, parses the reply with the same code that reads
-saved transcripts, writes the index and an SRT, and sets `tracks.captions` so the
-next `render` burns them.
+saved transcripts, writes the index, and writes an SRT to `--srt`
+(`captions.srt` beside the project by default).
+
+**It does not burn them.** Making captions and putting them on the picture are
+separate decisions, so attaching is a second command — or `--attach` when you
+mean it:
+
+```console
+$ splice transcribe
+{"ok":true,…,"captions":"/proj/captions.srt","attached":false,
+ "next":"splice caption /proj/captions.srt"}
+
+$ splice caption captions.srt     # now they burn on the next render
+```
+
+The SRT goes beside the project, never into `.splice/`: the cache is documented as
+deletable, and a file the project points at must not be.
 
 ```console
 $ splice transcribe --dry-run
@@ -329,7 +344,8 @@ $ splice transcribe
   language. A second run is `cached: true` and makes no request. Different model
   or provider, different entry.
 - **Captions**: the SRT is built from the same words as the index, so the two
-  cannot disagree. `--no-caption` writes the SRT and leaves the project alone.
+  cannot disagree. It is written, not attached; `--attach` collapses the two steps
+  when you are certain.
 - **`duck_stale`**: if ducking is configured, new word times invalidate the spans
   it mapped. The fix line says `sona duck`.
 

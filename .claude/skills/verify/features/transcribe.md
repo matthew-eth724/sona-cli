@@ -2,8 +2,8 @@
 
 ## Sub-features
 
-- `transcribe` — call the configured provider, write the index and an SRT, attach
-  the captions.
+- `transcribe` — call the configured provider, write the index and an SRT to
+  `captions.srt`. It does **not** attach them; `--attach` does.
 - `--dry-run` — say what would be sent (provider, model, bytes, endpoint) and
   send nothing.
 - Cache in `.splice/asr/` keyed by audio + provider + model + language.
@@ -13,7 +13,8 @@
 
 ```bash
 echo "$DEEPGRAM_API_KEY" | $SONA config set deepgram.api_key --stdin
-$SONA transcribe                 # provider picked, captions attached
+$SONA transcribe                 # writes captions.srt, attached: false
+$SONA caption captions.srt       # attaching is the separate decision
 $SONA render -o out.mp4
 ```
 
@@ -36,6 +37,11 @@ $SONA transcribe | jq '.cached'              # true: no request the second time
 
 ## Gotchas
 
+- **`transcribe` does not burn.** The JSON says `attached: false` and carries a
+  `next` command. A render straight after it will have no captions, and that is
+  correct — check `attached` before blaming the render.
+- The SRT is written beside the project, not into `.splice/`, so deleting the
+  cache cannot orphan captions the project points at.
 - **A cached result never calls the API**, by design. To force a call change
   `--model`, use a different source, or delete `.splice/asr/`.
 - **Gemini answers a bad key with 400, not 401**, and its error body is a JSON
