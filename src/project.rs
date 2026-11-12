@@ -1241,6 +1241,43 @@ impl Store {
         self.project.resolve(rel)
     }
 
+    /// The form a path takes inside `splice.json`: relative to the project
+    /// directory with `/` separators when the file is inside it, absolute
+    /// otherwise. `Store::resolve` reads both.
+    ///
+    /// `p` must exist and canonicalize: a missing file must fail before storage,
+    /// so `stored_path` never invents a path for an unreachable file. When the
+    /// file is exactly the project directory itself the relative form is empty,
+    /// so that case stays absolute too.
+    pub fn stored_path(&self, p: &Path) -> String {
+        // Canonicalize both sides so a symlinked cwd cannot defeat the prefix
+        // test, and so a stored relative path round-trips through `resolve`.
+        let Ok(file) = p.canonicalize() else {
+            return p.to_string_lossy().into_owned();
+        };
+        let Ok(root) = self.dir().canonicalize() else {
+            return p.to_string_lossy().into_owned();
+        };
+        if let Ok(relative) = file.strip_prefix(&root) {
+            // The file is the project directory itself: a relative form would
+            // be empty, which `resolve` would misread as the directory. Stay
+            // absolute.
+            if relative.as_os_str().is_empty() {
+                return file.to_string_lossy().into_owned();
+            }
+            // Build from components with `/` separators on every platform:
+            // never `to_string_lossy` then `replace("\\", "/")`.
+            return relative
+                .iter()
+                .map(|component| component.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+        }
+        // Outside the tree: byte-identical to today's absolute spelling
+        // (callers canonicalize first, so `p` was already canonical).
+        file.to_string_lossy().into_owned()
+    }
+
     /// Atomic replace: write beside, then rename. On Windows the rename
     /// replaces because we never hold the destination open.
     pub fn save(&self) -> Result<()> {
@@ -1788,6 +1825,66 @@ mod tests {
             project.resolve("media/a.mp4"),
             other.join("media").join("a.mp4")
         );
+        let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn stored_path_inside_the_project_is_relative_with_slashes() {
+        let dir = std::env::temp_dir().join(format!("splice-stored-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("media")).unwrap();
+        let file = dir.join("media").join("a.mp4");
+        std::fs::write(&file, b"").unwrap();
+        let store = Store {
+            path: dir.join("splice.json"),
+            project: Project::new(640, 360, Rational::new(30, 1)),
+        };
+        assert_eq!(store.stored_path(&file), "media/a.mp4");
+        // The project directory itself: relative form would be empty, so it
+        // stays absolute (never "").
+        let stored_dir = store.stored_path(&dir);
+        assert!(!stored_dir.is_empty(), "stored path for the project dir must not be empty");
+        assert!(std::path::Path::new(&stored_dir).is_absolute(), "{stored_dir} is not absolute");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stored_path_outside_the_project_stays_absolute() {
+        let dir = std::env::temp_dir().join(format!("splice-stored-sibling-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("project")).unwrap();
+        std::fs::create_dir_all(dir.join("shared")).unwrap();
+        let outside = dir.join("shared").join("a.mp4");
+        std::fs::write(&outside, b"").unwrap();
+        let store = Store {
+            path: dir.join("project").join("splice.json"),
+            project: Project::new(640, 360, Rational::new(30, 1)),
+        };
+        // A sibling reached through `..` never becomes `../shared/...`; it
+        // stays absolute so moving the project cannot invent a parent.
+        let stored = store.stored_path(&dir.join("project").join("..").join("shared").join("a.mp4"));
+        assert!(std::path::Path::new(&stored).is_absolute(), "{stored} is not absolute");
+        assert_eq!(stored, outside.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stored_path_in_another_tree_is_byte_identical_to_lossy() {
+        let proj = std::env::temp_dir().join(format!("splice-stored-proj-{}", std::process::id()));
+        let other = std::env::temp_dir().join(format!("splice-stored-other-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&proj);
+        let _ = std::fs::remove_dir_all(&other);
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let file = other.join("b.mp4");
+        std::fs::write(&file, b"").unwrap();
+        let store = Store {
+            path: proj.join("splice.json"),
+            project: Project::new(640, 360, Rational::new(30, 1)),
+        };
+        let stored = store.stored_path(&file);
+        assert_eq!(stored, file.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&proj);
         let _ = std::fs::remove_dir_all(&other);
     }
 }

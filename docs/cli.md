@@ -111,8 +111,10 @@ $ splice add podcast.mp4 --words w27-w31
 
 Notes:
 
-- Source paths are canonicalized at call time, so a project keeps working when
-  the scratch directory moves.
+- A source inside the project directory is stored relative to it; a source
+  outside is stored absolute. The value is read back against the project
+  directory, so the project keeps working when the directory moves. `add`'s
+  response reports `source` in that stored form, matching what `list` shows.
 - `--to` past the end of the medium is clamped to the medium and reported as a
   `clip_past_media` warning. The `duration` reported is what will render.
 - A file with no video stream is rejected (`2`).

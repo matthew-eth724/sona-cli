@@ -15,7 +15,7 @@ $ splice doctor
 | code | exit | cause | fix |
 | --- | --- | --- | --- |
 | `project_invalid` | 2 | `splice.json` unparseable, wrong `version`, zero canvas, `speed <= 0`, `src_out < src_in` | the message names the field; fix the file or re-run the edit |
-| `media_missing` | 3 | a source path does not exist | `splice add <correct path>`; sources are canonicalized at add time |
+| `media_missing` | 3 | a source path does not exist | `splice add <correct path>`; the stored path, resolved against the project directory, must point at an existing file |
 | `unreadable` | 3 | ffprobe cannot demux the file | re-encode the source, or check it is really a video |
 | `ffmpeg_failed` | 4 | one render step failed | `splice plan`, find that step, read its argv |
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |

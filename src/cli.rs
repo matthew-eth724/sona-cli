@@ -621,7 +621,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     transition: None,
                     speed_keys: None,
                     id: id.clone(),
-                    source: abs.to_string_lossy().to_string(),
+                    source: store.stored_path(&abs),
                     src_in: from.unwrap_or(Time::ZERO),
                     src_out: to,
                     speed,
@@ -634,7 +634,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
                 added.push(json!({
                     "id": id,
-                    "source": abs.display().to_string(),
+                    "source": store.stored_path(&abs),
                     "duration": dur.to_string(),
                 }));
             }
@@ -864,7 +864,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             store.project.tracks.overlays.push(Overlay::Image(
                 crate::project::ImageOverlay {
                     id: id.clone(),
-                    source: source.to_string_lossy().to_string(),
+                    source: store.stored_path(&source),
                     at,
                     anchor,
                     width: px as f32 / canvas_w as f32,
@@ -1032,7 +1032,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             // are stale until `splice duck` runs again.
             let duck = store.project.tracks.audio.as_ref().and_then(|b| b.duck.clone());
             store.project.tracks.audio = Some(AudioBed {
-                source: source.to_string_lossy().to_string(),
+                source: store.stored_path(&source),
                 gain_db: gain,
                 duck,
             });
@@ -1049,7 +1049,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             let cues = crate::caption::load(&source)
                 .with_context(|| format!("reading {}", source.display()))?;
             store.project.tracks.captions = Some(Captions {
-                source: source.to_string_lossy().to_string(),
+                source: store.stored_path(&source),
                 burn: true,
             });
             finish(
@@ -1401,14 +1401,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut warnings: Vec<crate::report::Diagnostic> = Vec::new();
             if attach {
                 store.project.tracks.captions = Some(crate::project::Captions {
-                    source: srt_path.display().to_string(),
+                    source: store.stored_path(&srt_path),
                     burn: true,
                 });
             }
             store.project.tracks.index = Some(crate::project::IndexRef {
                 audio_hash: audio.sha256.clone(),
-                source: source.display().to_string(),
-                transcript: transcript_path.display().to_string(),
+                source: store.stored_path(&source),
+                transcript: store.stored_path(&transcript_path),
                 provider: idx.provider.clone(),
                 language: idx.language.clone(),
                 words: idx.words.len(),
@@ -1460,7 +1460,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                     if let Some(first) = store.project.main_layer().and_then(|l| l.clips.first()) {
                         store.resolve(&first.source)
                     } else if let Some(existing) = &store.project.tracks.index {
-                        PathBuf::from(&existing.source)
+                        store.resolve(&existing.source)
                     } else {
                         bail!("usage: no clips yet; pass --audio <file>")
                     }
@@ -1514,8 +1514,8 @@ fn dispatch(cli: Cli) -> Result<()> {
 
             store.project.tracks.index = Some(crate::project::IndexRef {
                 audio_hash: fp.sha256.clone(),
-                source: source.to_string_lossy().to_string(),
-                transcript: transcript_path.to_string_lossy().to_string(),
+                source: store.stored_path(&source),
+                transcript: store.stored_path(&transcript_path),
                 provider: idx.provider.clone(),
                 language: idx.language.clone(),
                 words: idx.words.len(),
@@ -1941,7 +1941,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 Some(p) => {
                     let abs = std::fs::canonicalize(&p)
                         .with_context(|| format!("no such LUT: {}", p.display()))?;
-                    Some(abs.to_string_lossy().to_string())
+                    Some(store.stored_path(&abs))
                 }
                 None => None,
             };
@@ -2413,7 +2413,9 @@ fn idx_source(store: &Store) -> PathBuf {
         .as_ref()
         .map(|i| i.source.clone())
         .unwrap_or_default();
-    std::fs::canonicalize(&s).unwrap_or_else(|_| PathBuf::from(s))
+    // The recorded source may be relative to the project; resolve it so the
+    // comparison against a canonicalized clip path still works.
+    store.resolve(&s)
 }
 
 fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
@@ -2557,7 +2559,7 @@ fn project_index_path(store: &Store) -> Result<std::path::PathBuf> {
         .index
         .as_ref()
         .context("no_index: run `splice transcribe` or `splice index --from <file>` first")?;
-    let recorded = std::path::PathBuf::from(&r.transcript);
+    let recorded = store.resolve(&r.transcript);
     if recorded.exists() {
         return Ok(recorded);
     }

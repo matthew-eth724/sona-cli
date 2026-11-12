@@ -84,7 +84,7 @@ An optional look for the whole program. Absent means none of it.
 | `contrast` | f32 | 0..4 | 1 is unchanged |
 | `saturation` | f32 | 0..4 | 0 is grey, 1 unchanged |
 | `gamma` | f32 | 0.05..10 | 1 unchanged |
-| `lut` | string | — | path to a `.cube` 3D LUT, resolved against the project |
+| `lut` | string | — | path to a `.cube` 3D LUT, resolved against the project; stored relative when the LUT is inside the project directory, absolute otherwise |
 
 Applied in one `eq` (plus `lut3d`) before captions and overlays, so text is not
 graded along with the picture.
@@ -120,7 +120,7 @@ layer** — there is no separate sequence or timeline object to keep in sync.
 | field | type | default | notes |
 | --- | --- | --- | --- |
 | `id` | string | required | unique; allocated by the CLI as `clip_<n>` |
-| `source` | string | required | absolute path; `add` canonicalizes |
+| `source` | string | required | relative to the project directory when the file is inside it, absolute otherwise; `add` canonicalizes before comparing |
 | `src_in` | time | required | offset into the source |
 | `src_out` | time | omitted = end of source | clamped to the media duration |
 | `speed` | f64 | `1.0` | must be > 0; pitch preserved. Ignored when `speed_keys` is present |
@@ -155,6 +155,8 @@ One optional music bed, mixed under the clips and ended by them.
 | `gain_db` | f32 | `0.0` |
 | `duck` | object | omitted when not ducking |
 
+A `source` inside the project directory is stored relative to it; one outside is stored absolute.
+
 `duck` is written by `splice duck`:
 
 | field | type | notes |
@@ -177,7 +179,7 @@ A tagged array; the tag is `kind`.
 | field | type | default | notes |
 | --- | --- | --- | --- |
 | `id` | string | required | `image_<n>` |
-| `source` | string | required | absolute path to a PNG (alpha respected) |
+| `source` | string | required | relative to the project directory when the file is inside it, absolute otherwise |
 | `at` | `{start, end}` | required | microseconds |
 | `anchor` | `top`, `top_left`, `top_right`, `center`, `bottom`, `bottom_left`, `bottom_right` | `bottom` |
 | `width` | f32 | required | fraction of canvas width, so preview renders scale |
@@ -203,8 +205,8 @@ A pointer to the word index this project reads. The words themselves live in
 | field | type | notes |
 | --- | --- | --- |
 | `audio_hash` | string | SHA-256 of the extracted 16 kHz mono audio |
-| `source` | string | the media file the audio came from |
-| `transcript` | string | the transcript file that produced the words |
+| `source` | string | relative to the project directory when the file is inside it, absolute otherwise |
+| `transcript` | string | the transcript file that produced the words, stored relative to the project directory when inside it, absolute otherwise |
 | `provider` | string | `gemini`, `deepgram` or `srt` |
 | `language` | string | optional, when the provider reported one |
 | `words` | number | count, for a cheap sanity check |
@@ -218,7 +220,7 @@ Deleting `.splice/index/` leaves this pointer dangling, and `view`/`find` will s
 
 | field | type | default | notes |
 | --- | --- | --- | --- |
-| `source` | string | required | absolute path to an `.srt` |
+| `source` | string | required | relative to the project directory when the file is inside it, absolute otherwise |
 | `burn` | bool | `true` | burn into pixels; `false` currently renders nothing |
 
 ## Invariants

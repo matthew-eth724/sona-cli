@@ -155,8 +155,10 @@ ls <repo-root>/verification/<date>-<what>/
   timeline. `--to 6s` on a 6s clip plus `--from 1s` yields 5s of output.
 - **`--to` past the end of the media is clamped**, with a `clip_past_media`
   warning. Mutating commands return their own warnings, so read them there.
-- **Source paths are canonicalized when added**, so a project keeps working if
-  the scratch dir moves. `--project /elsewhere/splice.json` works from any cwd.
+- **A source inside the project directory is stored relative to it**; one
+  outside is stored absolute. Paths are read back against the project
+  directory, so `--project /elsewhere/splice.json` works from any cwd even
+  after the directory moves.
 - **Paths inside filters must be relative** (`src/paths.rs`). A `C:\` path
   unescaped becomes "No such filter", not a missing-file error. `cargo test`
   covers this; do not bypass `filter_escape`.
