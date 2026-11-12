@@ -29,7 +29,10 @@ function check(name, ok, detail) {
   } else {
     failures += 1;
     process.stdout.write(`  FAIL  ${name}\n`);
-    if (detail !== undefined) process.stdout.write(`${String(detail).slice(0, 2000)}\n`);
+    if (detail !== undefined) {
+      const text = typeof detail === "string" ? detail : JSON.stringify(detail, null, 2);
+      process.stdout.write(`${String(text).slice(0, 4000)}\n`);
+    }
   }
 }
 
@@ -82,7 +85,7 @@ function platformChecks() {
   // doctor is the contract every other command leans on: if these are false, a
   // render fails later with a filter error that looks like the edit's fault.
   const doc = json(["doctor"], { allowFailure: true });
-  check("doctor exits with JSON and ok:true", doc.ok === true, doc.error);
+  check("doctor exits with JSON and ok:true", doc.ok === true, doc.ok ? undefined : doc);
   check("doctor sees libx264", doc.encoders?.libx264 === true, JSON.stringify(doc.encoders));
   check("doctor sees libass", doc.filters?.libass === true, JSON.stringify(doc.filters));
   check("doctor resolved a font", typeof doc.font === "string" && doc.font.length > 0, doc.font);

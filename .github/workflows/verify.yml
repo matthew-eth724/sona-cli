@@ -45,6 +45,16 @@ jobs:
 
       - run: cargo build --release
 
+      - name: what ffmpeg is actually here
+        shell: bash
+        # A runner can have more than one ffmpeg; knowing which one wins is the
+        # difference between a product bug and a machine setup bug.
+        run: |
+          set -x
+          command -v ffmpeg; ffmpeg -hide_banner -version | head -2
+          ffmpeg -hide_banner -filters 2>/dev/null | grep -E ' (ass|subtitles) ' || echo "no ass/subtitles filter"
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -E ' libx264 ' || echo "no libx264 encoder"
+
       - name: drive the binary
         shell: bash
         run: |
