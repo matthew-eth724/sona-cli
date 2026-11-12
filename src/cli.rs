@@ -781,9 +781,15 @@ fn dispatch(cli: Cli) -> Result<()> {
             let at = TimeRange::new(Time::parse(&from)?, Time::parse(&to)?)?;
             let anchor = match pos.as_str() {
                 "top" => Anchor::Top,
+                "top-left" => Anchor::TopLeft,
+                "top-right" => Anchor::TopRight,
                 "center" => Anchor::Center,
                 "bottom" => Anchor::Bottom,
-                other => bail!("usage: --pos must be top|center|bottom, got {other}"),
+                "bottom-left" => Anchor::BottomLeft,
+                "bottom-right" => Anchor::BottomRight,
+                other => bail!(
+                    "usage: --pos must be top|top-left|top-right|center|bottom|bottom-left|bottom-right, got {other}"
+                ),
             };
             let id = store.project.next_id("text");
             let mut t = TextOverlay {
@@ -2220,6 +2226,8 @@ fn dispatch(cli: Cli) -> Result<()> {
         }
         Cmd::Doctor => {
             let caps = crate::ffmpeg::capabilities();
+            let (ffmpeg_path, ffmpeg_source) = crate::ffmpeg::program("ffmpeg");
+            let (ffprobe_path, _) = crate::ffmpeg::program("ffprobe");
             let (font, font_source) = match crate::ffmpeg::font_pick() {
                 Some((origin, path)) => (json!(path), json!(origin)),
                 None => (json!(null), json!(null)),
@@ -2263,7 +2271,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             });
             let report = json!({
                 "ffmpeg": if caps.version.is_empty() { json!(null) } else { json!(caps.version) },
+                "ffmpeg_path": ffmpeg_path.display().to_string(),
+                "ffmpeg_source": match ffmpeg_source {
+                    crate::ffmpeg::ProgramSource::Env => "SPLICE_FFMPEG",
+                    crate::ffmpeg::ProgramSource::BesideBinary => "beside the binary",
+                    crate::ffmpeg::ProgramSource::Path => "PATH",
+                },
                 "ffprobe": ffprobe,
+                "ffprobe_path": ffprobe_path.display().to_string(),
                 "encoders": {"libx264": caps.libx264},
                 "filters": {"libass": caps.libass, "drawtext": caps.drawtext},
                 "font": font,

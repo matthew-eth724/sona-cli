@@ -186,6 +186,40 @@ dependencies. Captions and overlays would share one text engine instead of two,
 That is a contained change to the overlay lowering, and it should land before the
 bundle rather than after.
 
+## Resolution order, built and proven
+
+`ffmpeg` and `ffprobe` now resolve in the order that makes a bundled copy win
+without touching `PATH`:
+
+1. `SPLICE_FFMPEG` — a directory holding both, or a path to `ffmpeg` (its sibling
+   `ffprobe` is preferred)
+2. a sibling of the running `splice` binary
+3. `PATH`
+
+`doctor` reports the chosen path and which rule chose it, so "why is it using that
+binary" has an answer.
+
+Verified end to end on this machine: with a copy of ffmpeg and ffprobe in the same
+directory as `splice`, `doctor` reports `source: beside the binary`, both paths
+point into that directory, and a real render — with a title — goes through it.
+Pointing `SPLICE_FFMPEG=/usr/bin` reports `source: SPLICE_FFMPEG` and switches.
+
+## Titles and captions share one engine
+
+`splice text` used `drawtext`; captions used libass. Two text engines meant two
+escaping rules, two font lookups, two positioning systems, and a bundled ffmpeg
+that had to satisfy `drawtext`'s freetype *and* harfbuzz dependency — which the
+slim build could not.
+
+Titles now compile to an ASS document, written into the cache as a content-addressed
+sidecar, and burn through the same `ass` filter captions use. `paths::text_escape`
+and the whole drawtext chain are gone, and `Capabilities::missing()` no longer
+requires drawtext — it would otherwise reject the very binary this tool ships.
+
+Verified: the decorate filter is `ass=filename='…ass'` with no `drawtext` in it, a
+title changes the pixels by 15.6 dB, and a title anchored `top-left` puts 18,004 ink
+pixels in the top-left quadrant and zero in the bottom-right.
+
 ## Costs
 
 | per machine, cold | today | this design |
@@ -241,6 +275,18 @@ five filters this tool emits.
    encoders and for the platforms with no build, and it costs one `stat` chain.
    It also creates a second way to run ffmpeg; the design keeps it because the
    alternative is a tool that cannot encode a long master on a Mac.
+
+## What the build recipe still needs
+
+A pristine slim build now configures and compiles but fails at link time:
+`h2645_sei.c` calls `ff_aom_uninit_film_grain_params` and the object defining it is
+not linked when AV1 and libaom are disabled. This is ffmpeg-internal build
+archaeology — resolved by enabling or disabling libaom coherently — and it needs a
+build loop rather than a one-shot guess.
+
+That is the argument for the maintained-prebuilt shape, not against bundling: the
+resolution order above is identical whichever binary sits in that directory, so
+shipping a prebuilt full ffmpeg first and a slim one later is one artifact swap.
 
 ## Next implementation step
 

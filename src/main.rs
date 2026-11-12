@@ -16,6 +16,7 @@ mod paths;
 mod project;
 mod render;
 mod report;
+mod text;
 mod time;
 mod transcript;
 

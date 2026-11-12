@@ -27,22 +27,6 @@ pub fn filter_escape(path: &Path, cwd: &Path) -> String {
     format!("'{s}'")
 }
 
-/// Text for `drawtext=text=`. Its parser consumes `:`, `'`, `\`, `,` and `%`.
-pub fn text_escape(text: &str) -> String {
-    let mut s = String::new();
-    for c in text.chars() {
-        match c {
-            '\\' => s.push_str("\\\\"),
-            '\'' => s.push_str("\\\\\\'"),
-            ':' => s.push_str("\\:"),
-            ',' => s.push_str("\\,"),
-            '%' => s.push_str("\\%"),
-            _ => s.push(c),
-        }
-    }
-    s
-}
-
 fn relative_to(path: &Path, cwd: &Path) -> PathBuf {
     if let Ok(stripped) = path.strip_prefix(cwd) {
         return normalize(stripped);
@@ -103,10 +87,5 @@ mod tests {
     fn quotes_and_backslashes_survive() {
         let cwd = p("/w");
         assert!(filter_escape(&p("/w/a'b.srt"), &cwd).contains("\\'"));
-    }
-
-    #[test]
-    fn drawtext_text_is_escaped() {
-        assert_eq!(text_escape("50% off: yes"), "50\\% off\\: yes");
     }
 }

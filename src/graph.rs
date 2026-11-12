@@ -11,7 +11,7 @@ use crate::cache;
 use crate::project::Canvas;
 use crate::ffmpeg::Invocation;
 use crate::media::MediaIndex;
-use crate::paths::{arg, filter_escape, text_escape};
+use crate::paths::{arg, filter_escape};
 use crate::project::{Anchor, Clip, Overlay, Project, Store, Transform};
 use crate::report::Diagnostic;
 use crate::time::Time;
@@ -688,6 +688,7 @@ pub fn plan(
         }
 
         let (canvas_w, _) = profile.canvas(&project.canvas);
+        let mut overlay_sidecar: Option<Sidecar> = None;
         let graph = build_filter_graph(
             project,
             store,
@@ -696,6 +697,9 @@ pub fn plan(
             &image_inputs,
             canvas_w,
             bed_input,
+            profile,
+            &cache_dir,
+            &mut overlay_sidecar,
         )?;
         inv.push("-filter_complex").push(graph);
         inv.push("-map").push("[v]");
@@ -721,7 +725,8 @@ pub fn plan(
             label: "burn captions/text, mix audio".into(),
             key: key.clone(),
             invocation: inv,
-            sidecar: None,
+            // The generated ASS document, written before the step runs.
+            sidecar: overlay_sidecar.take(),
             output: output.clone(),
         });
         base_key = key;
@@ -839,6 +844,9 @@ fn build_filter_graph(
     image_inputs: &[(String, usize)],
     canvas_width: u32,
     bed_input: usize,
+    profile: Profile,
+    cache_dir: &Path,
+    sidecar: &mut Option<Sidecar>,
 ) -> Result<String> {
     let mut vf: Vec<String> = Vec::new();
     // Grading first: a look applies to the picture, not to the text laid over it.
@@ -859,29 +867,16 @@ fn build_filter_graph(
             "subtitles=filename={esc}:force_style='Fontsize=20,Outline=1.4,MarginV=28'"
         ));
     }
-    for o in &project.tracks.overlays {
-        let Overlay::Text(t) = o else { continue };
-        let font = crate::ffmpeg::resolve_font().context("no_font: fc-match found no sans font")?;
-        let (x, y) = match t.anchor {
-            Anchor::Top => ("(w-text_w)/2", "48".to_string()),
-            Anchor::TopLeft => ("48", "48".to_string()),
-            Anchor::TopRight => ("w-text_w-48", "48".to_string()),
-            Anchor::Center => ("(w-text_w)/2", "(h-th)/2".to_string()),
-            Anchor::Bottom => ("(w-text_w)/2", "h-th-64".to_string()),
-            Anchor::BottomLeft => ("48", "h-th-64".to_string()),
-            Anchor::BottomRight => ("w-text_w-48", "h-th-64".to_string()),
-        };
-        vf.push(format!(
-            "drawtext=fontfile={}:text='{}':fontsize={}:fontcolor={}:box=1:boxcolor=black@0.45:boxborderw=16:x={}:y={}:enable='between(t,{:.3},{:.3})'",
-            filter_escape(Path::new(&font), &store.dir()),
-            text_escape(&t.content),
-            t.size,
-            t.color,
-            x,
-            y,
-            t.at.start.secs_f64(),
-            t.at.end.secs_f64()
-        ));
+    // Titles are an ASS document, not a chain of drawtext filters: one text
+    // engine, shared with captions.
+    if project.tracks.overlays.iter().any(|o| matches!(o, Overlay::Text(_))) {
+        let (w, h) = profile.canvas(&project.canvas);
+        if let Some(body) = crate::text::document(project, w, h, &crate::ffmpeg::font_family()) {
+            let key = cache::hash(&["overlays".into(), body.clone()]);
+            let path = cache::path(cache_dir, &key, "ass");
+            *sidecar = Some(Sidecar { path: path.clone(), body });
+            vf.push(format!("ass=filename={}", filter_escape(&path, &store.dir())));
+        }
     }
 
     let mut graph = String::new();

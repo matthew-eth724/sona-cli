@@ -12,10 +12,74 @@ pub struct Invocation {
     pub args: Vec<OsString>,
 }
 
+/// Where an ffmpeg tool came from, so `doctor` can say it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProgramSource {
+    Env,
+    BesideBinary,
+    Path,
+}
+
+/// Resolves `ffmpeg`/`ffprobe`, in the order that makes a bundled copy win:
+/// `SPLICE_FFMPEG` (a directory or a file), then a sibling of this executable,
+/// then whatever is on PATH.
+///
+/// The sibling rule is what lets the npm package ship its own ffmpeg: put it in
+/// `bin/` next to `splice` and it is found without touching PATH or the caller.
+pub fn program(name: &str) -> (PathBuf, ProgramSource) {
+    let exe_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    if let Ok(dir_or_file) = std::env::var("SPLICE_FFMPEG") {
+        let p = PathBuf::from(dir_or_file);
+        if p.is_dir() {
+            let candidate = p.join(&exe_name);
+            if candidate.is_file() {
+                return (candidate, ProgramSource::Env);
+            }
+        } else if p.is_file() && name == "ffmpeg" {
+            return (p, ProgramSource::Env);
+        } else if p.is_file() {
+            // SPLICE_FFMPEG pointing at ffmpeg: look for its neighbour for probe
+            if let Some(dir) = p.parent() {
+                let candidate = dir.join(&exe_name);
+                if candidate.is_file() {
+                    return (candidate, ProgramSource::Env);
+                }
+            }
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(&exe_name);
+            if candidate.is_file() {
+                return (candidate, ProgramSource::BesideBinary);
+            }
+        }
+    }
+    (PathBuf::from(exe_name), ProgramSource::Path)
+}
+
+pub fn ffmpeg() -> PathBuf {
+    program("ffmpeg").0
+}
+
+pub fn ffprobe() -> PathBuf {
+    program("ffprobe").0
+}
+
 impl Invocation {
     pub fn new() -> Invocation {
         Invocation {
-            args: vec!["ffmpeg".into(), "-y".into(), "-hide_banner".into(), "-loglevel".into(), "error".into()],
+            args: vec![
+                program("ffmpeg").0.into_os_string(),
+                "-y".into(),
+                "-hide_banner".into(),
+                "-loglevel".into(),
+                "error".into(),
+            ],
         }
     }
 
@@ -97,33 +161,33 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
+    /// What the tool actually needs. `drawtext` used to be on this list; titles
+    /// are ASS now, so a build without it is fine — reporting it as a failure
+    /// would reject the very binary this tool now ships.
     pub fn missing(&self) -> Vec<&'static str> {
         let mut v = Vec::new();
         if !self.libx264 {
             v.push("libx264 encoder");
         }
         if !self.libass {
-            v.push("libass (subtitles filter)");
-        }
-        if !self.drawtext {
-            v.push("freetype (drawtext filter)");
+            v.push("libass (subtitles and ass filters)");
         }
         v
     }
 }
 
 pub fn capabilities() -> Capabilities {
-    let filters = Command::new("ffmpeg")
+    let filters = Command::new(ffmpeg())
         .args(["-hide_banner", "-filters"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
-    let encoders = Command::new("ffmpeg")
+    let encoders = Command::new(ffmpeg())
         .args(["-hide_banner", "-encoders"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_default();
-    let version = Command::new("ffmpeg")
+    let version = Command::new(ffmpeg())
         .arg("-version")
         .output()
         .ok()
@@ -138,6 +202,32 @@ pub fn capabilities() -> Capabilities {
 }
 
 /// Where the font came from, so `doctor` can say so instead of guessing.
+/// The family name libass needs in an ASS style, from the same lookup that
+/// resolves the file for anything that wants a path.
+pub fn font_family() -> String {
+    use std::sync::OnceLock;
+    static FAMILY: OnceLock<String> = OnceLock::new();
+    FAMILY
+        .get_or_init(|| {
+            let out = Command::new("fc-match")
+                .args(["-f", "%{family}", "sans"])
+                .output();
+            if let Ok(out) = out {
+                if out.status.success() {
+                    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    // fc-match returns a comma-separated preference list
+                    if let Some(first) = s.split(',').next() {
+                        if !first.trim().is_empty() {
+                            return first.trim().to_string();
+                        }
+                    }
+                }
+            }
+            "sans".to_string()
+        })
+        .clone()
+}
+
 pub fn font_pick() -> Option<(&'static str, String)> {
     use std::sync::OnceLock;
     static PICK: OnceLock<Option<(&'static str, String)>> = OnceLock::new();

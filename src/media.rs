@@ -67,7 +67,7 @@ pub fn probe(path: &Path) -> Result<Media> {
     if !path.exists() {
         bail!("media_missing: {} does not exist", path.display());
     }
-    let out = Command::new("ffprobe")
+    let out = Command::new(crate::ffmpeg::ffprobe())
         .args(["-v", "error", "-print_format", "json", "-show_format", "-show_streams"])
         .arg(path)
         .output()
