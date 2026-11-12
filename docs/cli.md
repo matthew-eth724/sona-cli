@@ -178,6 +178,38 @@ exists:
 
 Removing the last clip leaves an empty project; `render` then fails with `2`.
 
+## ramp
+
+```
+splice ramp <id> --from <speed> --to <speed> [--slices 4] [--none] [--dry-run]
+```
+
+Speed that changes across a clip. Implemented by **slicing**: the source is cut at
+the key times and each slice plays at one constant speed — the average of the ramp
+at its two ends — so the audio keeps its pitch (each slice gets its own `atempo`)
+and both streams are retimed identically, which is what keeps them in sync.
+
+```console
+$ splice ramp clip_1 --from 1 --to 2 --slices 4
+{"ok":true,"changed":["clip_1"],"from":1.0,"to":2.0,"slices":4,"clip_duration":"00:00:05.529"}
+
+$ splice plan | jq -r '.steps[].label'
+normalize clip_1 1/4
+normalize clip_1 2/4
+normalize clip_1 3/4
+normalize clip_1 4/4
+concat 4 segments
+```
+
+The trade is explicit: each slice is its own render step and its own cache entry,
+and the motion is a staircase rather than a true curve. More slices is smoother and
+costs more steps. Measured on 8 seconds at 1×→2×, the duration converges on the
+true integral as slices increase: 5.333 s (1), 5.485 (2), 5.529 (4), 5.541 (8),
+5.544 (16), against 8·ln2 = 5.545.
+
+`splice speed <id> <n>` still sets a constant speed, and it **clears any ramp** —
+a constant speed and a ramp are two ways to say the same thing.
+
 ## text
 
 ```

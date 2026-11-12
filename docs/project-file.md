@@ -125,7 +125,8 @@ layer** — there is no separate sequence or timeline object to keep in sync.
 | `source` | string | required | absolute path; `add` canonicalizes |
 | `src_in` | time | required | offset into the source |
 | `src_out` | time | omitted = end of source | clamped to the media duration |
-| `speed` | f64 | `1.0` | must be > 0; pitch preserved |
+| `speed` | f64 | `1.0` | must be > 0; pitch preserved. Ignored when `speed_keys` is present |
+| `speed_keys` | array | omitted | `[{t, speed}]` with `t` an absolute source offset: a speed ramp, compiled by slicing |
 | `transform` | `fit` \| `fill` | `fit` | pad or crop to the canvas |
 | `gain_db` | f32 | `0.0` | per-clip audio gain |
 

@@ -406,6 +406,25 @@ enum Cmd {
         #[command(subcommand)]
         action: LayerCmd,
     },
+    /// Ramp a clip's speed from one value to another, in slices.
+    Ramp {
+        id: String,
+        /// Speed at the start of the clip.
+        #[arg(long)]
+        from: f64,
+        /// Speed at the end of the clip.
+        #[arg(long)]
+        to: f64,
+        /// How many slices to divide the clip into. More is smoother and costs
+        /// one render step each.
+        #[arg(long, default_value = "4")]
+        slices: usize,
+        /// Remove the ramp, back to a constant speed.
+        #[arg(long)]
+        none: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Mask a layer: chroma key or vignette.
     Mask {
         /// The layer id.
@@ -576,6 +595,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 let id = store.project.next_id("clip");
                 let clip = Clip {
                     transition: None,
+                    speed_keys: None,
                     id: id.clone(),
                     source: abs.to_string_lossy().to_string(),
                     src_in: from.unwrap_or(Time::ZERO),
@@ -694,7 +714,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .project
                 .clip_layer_index(&id)
                 .with_context(|| format!("usage: no clip {id}"))?;
-            store.project.tracks.layers[li].clips[ci].speed = speed;
+            let clip = &mut store.project.tracks.layers[li].clips[ci];
+            clip.speed = speed;
+            // A constant speed and a ramp are two ways to say the same thing.
+            clip.speed_keys = None;
             finish(&mut store, &mut media, dry_run, json!({"changed": [id], "invalidated": 1}))
         }
         Cmd::Move { id, to, dry_run } => {
@@ -1763,6 +1786,56 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
             Ok(())
+        }
+        Cmd::Ramp { id, from, to, slices, none, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            if !dry_run {
+                crate::history::record(&store, "ramp")?;
+            }
+            if !none && (from <= 0.0 || to <= 0.0) {
+                bail!("usage: speeds must be positive");
+            }
+            if slices == 0 || slices > 64 {
+                bail!("usage: --slices takes 1 to 64");
+            }
+            let (li, ci) = store
+                .project
+                .clip_layer_index(&id)
+                .with_context(|| format!("usage: no clip {id}"))?;
+            if none {
+                store.project.tracks.layers[li].clips[ci].speed_keys = None;
+                return finish(&mut store, &mut media, dry_run, json!({"changed": [id], "ramp": null}));
+            }
+            // read what the ramp needs before taking a mutable borrow
+            let (src, start, src_out) = {
+                let c = &store.project.tracks.layers[li].clips[ci];
+                (store.resolve(&c.source), c.src_in, c.src_out)
+            };
+            let m = media.get(&src)?.clone();
+            let end = src_out.unwrap_or(m.duration).min(m.duration).max(start);
+            if end <= start {
+                bail!("usage: {id} has no source span to ramp over");
+            }
+            let span = end.saturating_sub(start).secs_f64();
+            // keys at the slice boundaries, speeds linearly interpolated
+            let mut keys = Vec::new();
+            for i in 0..=slices {
+                let f = i as f64 / slices as f64;
+                keys.push(crate::project::SpeedKey {
+                    t: Time::from_secs_f64(start.secs_f64() + span * f),
+                    speed: from + (to - from) * f,
+                });
+            }
+            store.project.tracks.layers[li].clips[ci].speed_keys = Some(keys);
+            store.project.validate()?;
+            let dur = store.project.tracks.layers[li].clips[ci].out_duration(m.duration);
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({"changed": [id], "from": from, "to": to, "slices": slices, "clip_duration": dur.to_string()}),
+            )
         }
         Cmd::Mask { layer, chroma, similarity, blend, vignette, angle, none, dry_run } => {
             let mut store = Store::open(&path)?;

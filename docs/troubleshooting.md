@@ -165,6 +165,14 @@ lookup tries `SPLICE_FONT`, then `fc-match`, then fonts that ship with the OS
 Windows or macOS install, which is why the built-in paths exist. `doctor` reports
 which source won.
 
+**A ramp made the motion look steppy.** That is what it is: a staircase of
+constant speeds. Raise `--slices`. The duration converges on the true curve as
+slices increase (measured: 5.333 s at 1 slice, 5.544 at 16, for a 1×→2× ramp over
+8 s whose exact length is 5.545).
+
+**`plan` shows more steps than clips after a ramp.** Expected: each slice is its
+own normalize step plus the concat, because each has to be retimed separately.
+
 **A chroma key left a green fringe.** Raise `--similarity` (0.3 default) or add
 `--blend` for soft edges; a LUT and a key on the same layer both work, the key
 runs first.

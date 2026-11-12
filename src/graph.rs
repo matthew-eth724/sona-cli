@@ -304,6 +304,8 @@ fn plan_layer(
     for clip in &layer.clips {
         let src = store.resolve(&clip.source);
         let m = media.get(&src)?.clone();
+        let slices = clip.slices(m.duration);
+        let slice_count = slices.len();
         let span = clip.source_span(m.duration);
         if span.micros() <= 0 {
             warnings.push(
@@ -316,18 +318,19 @@ fn plan_layer(
             );
             continue;
         }
+        for (slice_index, slice) in slices.iter().enumerate() {
         let mut inv = Invocation::new();
-        if clip.src_in > Time::ZERO {
-            inv.push("-ss").push(fmt_secs(clip.src_in));
+        if slice.start > Time::ZERO {
+            inv.push("-ss").push(fmt_secs(slice.start));
         }
-        inv.push("-t").push(fmt_secs(span));
+        inv.push("-t").push(fmt_secs(slice.span()));
         inv.input(&src);
         if !m.has_audio {
             inv.push("-f").push("lavfi").push("-i").push("anullsrc=r=48000:cl=stereo");
         }
-        let vf = video_chain(clip, canvas, profile);
+        let vf = video_chain(clip, canvas, profile, slice.speed);
         inv.push("-vf").push(vf);
-        inv.push("-af").push(audio_chain(clip, m.has_audio));
+        inv.push("-af").push(audio_chain(clip, m.has_audio, slice.speed));
         inv.push("-map").push("0:v:0");
         if m.has_audio {
             inv.push("-map").push("0:a:0");
@@ -348,21 +351,31 @@ fn plan_layer(
         ]);
         let output = cache::path(cache_dir, &key, "mp4");
         inv.push(arg(&output));
-        let step_index = steps.len();
+        // A single slice keeps the old label, so existing plans stay identical.
+        let label = if slice_count == 1 {
+            format!("normalize {}", clip.id)
+        } else {
+            format!("normalize {} {}/{}", clip.id, slice_index + 1, slice_count)
+        };
         steps.push(Step {
-            label: format!("normalize {}", clip.id),
+            label,
             key: key.clone(),
             invocation: inv,
             sidecar: None,
             output: output.clone(),
         });
-        let _ = step_index;
         segments.push(Segment {
             key: key.clone(),
             path: output,
-            duration: clip.out_duration(m.duration),
-            transition: if segments.is_empty() { None } else { clip.transition.clone() },
+            duration: slice.out(),
+            // Only the clip's first slice carries its incoming transition.
+            transition: if slice_index > 0 || segments.is_empty() {
+                None
+            } else {
+                clip.transition.clone()
+            },
         });
+        }
     }
     if segments.is_empty() {
         bail!("every clip in layer `{}` is empty after trimming", layer.id);
@@ -763,7 +776,7 @@ fn fmt_secs(t: Time) -> String {
     format!("{:.6}", t.secs_f64())
 }
 
-fn video_chain(clip: &Clip, canvas: &crate::project::Canvas, profile: Profile) -> String {
+fn video_chain(clip: &Clip, canvas: &crate::project::Canvas, profile: Profile, speed: f64) -> String {
     let (w, h) = profile.canvas(canvas);
     let mut parts = vec![match clip.transform {
         Transform::Fit => format!(
@@ -778,21 +791,21 @@ fn video_chain(clip: &Clip, canvas: &crate::project::Canvas, profile: Profile) -
     // timestamps after the stream is already 30 fps, and the muxer then reports
     // 30.15 or 30.3 instead of 30 — measured on a 4:3 23.976 source at 1.5x, 2x
     // and 3x.
-    if (clip.speed - 1.0).abs() > f64::EPSILON {
-        parts.push(format!("setpts=PTS/{:.6}", clip.speed));
+    if (speed - 1.0).abs() > f64::EPSILON {
+        parts.push(format!("setpts=PTS/{speed:.6}"));
     }
     let fps = profile.fps(canvas.fps);
     parts.push(format!("fps={}/{}", fps.num, fps.den));
     parts.join(",")
 }
 
-fn audio_chain(clip: &Clip, has_audio: bool) -> String {
+fn audio_chain(clip: &Clip, has_audio: bool, speed: f64) -> String {
     let mut parts = vec!["aresample=48000".to_string()];
     if has_audio {
         parts.push("aformat=sample_fmts=fltp:channel_layouts=stereo".into());
     }
-    if (clip.speed - 1.0).abs() > f64::EPSILON {
-        parts.extend(atempo_chain(clip.speed));
+    if (speed - 1.0).abs() > f64::EPSILON {
+        parts.extend(atempo_chain(speed));
     }
     if clip.gain_db.abs() > 0.01 {
         parts.push(format!("volume={:.2}dB", clip.gain_db));
@@ -1049,15 +1062,16 @@ mod tests {
             speed: 3.0,
             transform: crate::project::Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition: None,
         };
-        let chain = video_chain(&clip, &project.canvas, Profile::Final);
+        let chain = video_chain(&clip, &project.canvas, Profile::Final, clip.speed);
         let setpts = chain.find("setpts").expect("setpts in chain");
         let fps = chain.find("fps=").expect("fps in chain");
         assert!(setpts < fps, "setpts must come first: {chain}");
 
         clip.speed = 1.0;
-        let still = video_chain(&clip, &project.canvas, Profile::Final);
+        let still = video_chain(&clip, &project.canvas, Profile::Final, clip.speed);
         assert!(!still.contains("setpts"), "no retime at 1x: {still}");
         assert!(still.contains("fps=30/1"));
     }
@@ -1123,6 +1137,7 @@ mod duck_tests {
             speed,
             transform: Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition: tx.map(|d| crate::project::Transition {
                 kind: TransitionKind::Crossfade,
                 duration: Time::from_secs_f64(d),

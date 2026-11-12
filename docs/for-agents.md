@@ -75,6 +75,11 @@ gain envelope from word times, so the music drops exactly where someone speaks
 and lifts in the gaps. Re-run it after any change to the cut: `duck_stale` tells
 you when, and the fix is the command itself.
 
+**A ramp costs one render step per slice.** `splice ramp clip --from 1 --to 2
+--slices 4` gives you four normalize steps and a concat. Fewer slices means a
+coarser staircase; more means smoother motion and more cache entries. The audio
+stays in pitch and in sync because each slice is retimed as a unit.
+
 **Transitions cost a re-encode; cuts do not.** Adding `transition` to an assemble
 step turns the copy-concat into an `xfade` chain. Worth it between shots, not
 worth it between two halves of one sentence.

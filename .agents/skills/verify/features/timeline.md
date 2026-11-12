@@ -26,7 +26,26 @@ $SPLICE trim clip_1 --from 2s
 $SPLICE inspect | jq '.warnings'
 ```
 
+## Speed ramps
+
+```bash
+$SONA ramp clip_1 --from 1 --to 2 --slices 4
+$SONA plan | jq -r '.steps[].label'    # normalize 1/4 … 4/4, concat 4 segments
+$SONA list | jq -r '.duration'         # 00:00:05.529 for 8 s at 1x->2x
+```
+
+The durations are the cheap proof: with more slices they converge on the exact
+integral of the speed curve. For 8 s at 1×→2× that is 8·ln2 = 5.545 s; measured
+5.333 (1 slice), 5.485 (2), 5.529 (4), 5.541 (8), 5.544 (16).
+
 ## Gotchas
+
+- A ramp is a staircase, not a curve. More `--slices` is smoother and costs one
+  render step each, so a 4-slice ramp turns one clip into four cache entries.
+- `speed` clears a ramp, because a constant speed and a ramp are two ways to say
+  the same thing.
+- Ramp keys are absolute source offsets, so a `trim` that moves `src_in` keeps the
+  ramp meaningful; keys outside the trim are ignored.
 
 - Documents are **version 2**: `tracks.layers[].clips`, with `z`, `start`,
   `place` and `motion` per layer. A version-1 document upgrades in memory on open

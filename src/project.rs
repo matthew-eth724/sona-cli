@@ -298,9 +298,42 @@ pub struct Clip {
     pub transform: Transform,
     #[serde(default)]
     pub gain_db: f32,
+    /// Speed over time, as offsets into the source. A ramp is compiled by slicing
+    /// the source at these points and giving each slice one constant speed, so
+    /// the audio keeps its pitch and stays in sync. When present, `speed` is
+    /// ignored — one representation at a time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_keys: Option<Vec<SpeedKey>>,
     /// How this clip is brought in from the previous one. `None` is a hard cut.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transition: Option<Transition>,
+}
+
+/// Speed at a point in the source. Offsets are absolute source time, so a ramp
+/// survives a trim that moves `src_in`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SpeedKey {
+    pub t: Time,
+    pub speed: f64,
+}
+
+/// One slice of a clip: a source range and the constant speed it plays at.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Slice {
+    pub start: Time,
+    pub end: Time,
+    pub speed: f64,
+}
+
+impl Slice {
+    pub fn span(&self) -> Time {
+        self.end.saturating_sub(self.start)
+    }
+
+    /// How long this slice occupies on the timeline.
+    pub fn out(&self) -> Time {
+        Time::from_secs_f64(self.span().secs_f64() / self.speed)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -769,6 +802,21 @@ impl Project {
                         bail!("clip {} has a zero-length transition", c.id);
                     }
                 }
+                if let Some(keys) = &c.speed_keys {
+                    if keys.is_empty() {
+                        bail!("clip {} has a ramp with no keys", c.id);
+                    }
+                    for w in keys.windows(2) {
+                        if w[1].t <= w[0].t {
+                            bail!("clip {} has ramp keys out of order", c.id);
+                        }
+                    }
+                    for k in keys {
+                        if k.speed <= 0.0 {
+                            bail!("clip {} has a ramp speed of {} or less", c.id, k.speed);
+                        }
+                    }
+                }
                 if let Some(out) = c.src_out {
                     if out < c.src_in {
                         bail!("clip {} ends before it starts", c.id);
@@ -965,6 +1013,67 @@ impl Project {
 }
 
 impl Clip {
+    /// The slices this clip compiles to.
+    ///
+    /// One slice for a constant speed. For a ramp, the source is cut at the key
+    /// times and each slice plays at the average of the speeds at its ends —
+    /// the piecewise-constant reading of a linear ramp. This is the single place
+    /// that answers "where does it cut", so the planner, the duration maths and
+    /// the doctor cannot disagree.
+    pub fn slices(&self, media_duration: Time) -> Vec<Slice> {
+        let end = self
+            .src_out
+            .unwrap_or(media_duration)
+            .min(media_duration)
+            .max(self.src_in);
+        let keys = match &self.speed_keys {
+            Some(k) if !k.is_empty() => k,
+            _ => {
+                return if end > self.src_in {
+                    vec![Slice { start: self.src_in, end, speed: self.speed }]
+                } else {
+                    Vec::new()
+                }
+            }
+        };
+        let speed_at = |t: Time| -> f64 {
+            if t <= keys[0].t {
+                return keys[0].speed;
+            }
+            for w in keys.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                if t >= a.t && t <= b.t {
+                    let span = (b.t.micros() - a.t.micros()).max(1) as f64;
+                    let f = (t.micros() - a.t.micros()) as f64 / span;
+                    return a.speed + (b.speed - a.speed) * f;
+                }
+            }
+            keys[keys.len() - 1].speed
+        };
+
+        // Boundaries: the clip's own ends, plus every key strictly inside.
+        let mut bounds: Vec<Time> = vec![self.src_in];
+        bounds.extend(
+            keys.iter()
+                .map(|k| k.t)
+                .filter(|t| *t > self.src_in && *t < end),
+        );
+        bounds.push(end);
+        bounds.sort_by_key(|t| t.micros());
+        bounds.dedup();
+
+        let mut out = Vec::new();
+        for w in bounds.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if b <= a {
+                continue;
+            }
+            let speed = ((speed_at(a) + speed_at(b)) / 2.0).max(0.01);
+            out.push(Slice { start: a, end: b, speed });
+        }
+        out
+    }
+
     /// How much of the source file this clip consumes. Clamped to what the
     /// media actually has, so a reported duration matches the rendered one.
     pub fn source_span(&self, media_duration: Time) -> Time {
@@ -974,9 +1083,10 @@ impl Clip {
             .saturating_sub(self.src_in)
     }
 
-    /// Duration this clip contributes to the timeline, after speed.
+    /// Duration this clip contributes to the timeline, after every speed change.
     pub fn out_duration(&self, media_duration: Time) -> Time {
-        Time::from_secs_f64(self.source_span(media_duration).secs_f64() / self.speed)
+        let total: i64 = self.slices(media_duration).iter().map(|s| s.out().micros()).sum();
+        Time::from_micros(total)
     }
 
     /// The same answer without the media, when `src_out` is known. Keeps
@@ -1130,6 +1240,58 @@ mod tests {
     use crate::media::MediaIndex;
 
     #[test]
+    fn a_clip_without_a_ramp_is_one_slice() {
+        let c = clip_with("clip_1", 4.0, None);
+        let slices = c.slices(Time::from_secs_f64(4.0));
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].start.micros(), 0);
+        assert_eq!(slices[0].end.micros(), 4_000_000);
+        assert_eq!(c.out_duration(Time::from_secs_f64(4.0)).micros(), 4_000_000);
+    }
+
+    #[test]
+    fn a_ramp_slices_at_its_keys_and_divides_by_the_average_speed() {
+        let mut c = clip_with("clip_1", 8.0, None);
+        // 1x -> 2x in four slices: each covers 2 s of source
+        c.speed_keys = Some(
+            (0..=4)
+                .map(|i| SpeedKey {
+                    t: Time::from_secs_f64(2.0 * i as f64),
+                    speed: 1.0 + 0.25 * i as f64,
+                })
+                .collect(),
+        );
+        let slices = c.slices(Time::from_secs_f64(8.0));
+        assert_eq!(slices.len(), 4);
+        // the first slice plays at the average of 1.0 and 1.25
+        assert!((slices[0].speed - 1.125).abs() < 1e-9);
+        assert_eq!(slices[0].start.micros(), 0);
+        assert_eq!(slices[3].end.micros(), 8_000_000);
+        // 8 s of source at an average near 1.5x, and never longer than the source
+        let out = c.out_duration(Time::from_secs_f64(8.0));
+        assert!(out.micros() < 8_000_000);
+        assert!((out.secs_f64() - 5.529).abs() < 0.01, "{}", out.secs_f64());
+    }
+
+    #[test]
+    fn ramp_keys_outside_a_trim_are_ignored() {
+        let mut c = clip_with("clip_1", 8.0, None);
+        c.src_in = Time::from_secs_f64(3.0);
+        c.src_out = Some(Time::from_secs_f64(5.0));
+        c.speed_keys = Some(vec![
+            SpeedKey { t: Time::ZERO, speed: 1.0 },
+            SpeedKey { t: Time::from_secs_f64(8.0), speed: 2.0 },
+        ]);
+        let slices = c.slices(Time::from_secs_f64(8.0));
+        // only the trimmed span survives, as one slice playing at the average of
+        // the ramp's speeds at 3 s and 5 s: (1.375 + 1.625) / 2
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].start.micros(), 3_000_000);
+        assert_eq!(slices[0].end.micros(), 5_000_000);
+        assert!((slices[0].speed - 1.5).abs() < 1e-9, "{}", slices[0].speed);
+    }
+
+    #[test]
     fn a_grade_only_emits_the_knobs_that_are_set() {
         let g = Grade {
             brightness: Some(0.1),
@@ -1209,6 +1371,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition: None,
         });
         let mut media = MediaIndex::default();
@@ -1233,6 +1396,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition: None,
         });
         p.tracks.overlays.push(Overlay::Text(TextOverlay {
@@ -1258,6 +1422,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition,
         }
     }
@@ -1456,6 +1621,7 @@ mod tests {
             speed: 1.0,
             transform: Transform::Fit,
             gain_db: 0.0,
+            speed_keys: None,
             transition: None,
         });
         p.tracks.captions = Some(Captions { source: "/nope/x.srt".into(), burn: true });
