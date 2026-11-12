@@ -12,11 +12,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SPLICE = process.env.SPLICE ?? "splice";
+// A relative SPLICE breaks the moment the script enters a temp directory, which is
+// most of what it does — CI passes `target/release/splice`. Make it absolute once.
+const rawSplice = process.env.SPLICE ?? "splice";
+const SPLICE = rawSplice.includes("/") || rawSplice.includes("\\") ? resolve(rawSplice) : rawSplice;
 const root = join(here, "..", "..");
 let failures = 0;
 
