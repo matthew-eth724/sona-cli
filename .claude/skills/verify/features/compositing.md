@@ -55,6 +55,7 @@ ffmpeg -y -loop 1 -i still.png -t 6 -r 25 -i anullsrc -c:v libx264 -c:a aac -sho
 - `z` must be unique; `z = 0` carries the program audio and must fill the canvas.
 - Only the layer at `z = 0` is heard. An overlay layer with audio warns
   `layer_audio_dropped` instead of dropping it silently.
-- Placement is static. A sliding PiP is not expressible, and the document has no
-  field for it rather than a field that half-works.
+- Placement animates position only (`key --place`), never size. Compute the
+  expected x from the keys and diff that box; a box where the layer used to be
+  should be identical to a single-layer render by then.
 - A camera change moves the `composite` key only; the clip renders are reused.

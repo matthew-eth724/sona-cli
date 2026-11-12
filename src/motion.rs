@@ -122,6 +122,51 @@ pub fn place_px(x: f32, y: f32, size: f32, canvas: (u32, u32)) -> Option<(u32, u
     ))
 }
 
+/// `overlay` x/y expressions for a sliding layer, in output pixels.
+///
+/// Keys are layer-local, and `overlay` evaluates `t` in program time, so the
+/// expression subtracts the layer's start. Position only: the size stays the one
+/// from `place.size`.
+pub fn place_exprs(
+    keys: &[crate::project::PlaceKey],
+    start: Time,
+    canvas: (u32, u32),
+) -> Option<(String, String)> {
+    let first = keys.first()?;
+    let var = format!("(t-{:.6})", start.secs_f64());
+    let x = if keys.iter().all(|k| (k.x - first.x).abs() < 1e-9) {
+        format!("{:.6}", first.x)
+    } else {
+        let mut xs: Vec<Key> = keys
+            .iter()
+            .map(|k| Key {
+                t: k.t,
+                zoom: 1.0,
+                at: crate::project::Point { x: k.x, y: k.y },
+            })
+            .collect();
+        xs.shrink_to_fit();
+        lerp_expr(&var, &xs, |k| k.at.x as f64)
+    };
+    let y = if keys.iter().all(|k| (k.y - first.y).abs() < 1e-9) {
+        format!("{:.6}", first.y)
+    } else {
+        let ys: Vec<Key> = keys
+            .iter()
+            .map(|k| Key {
+                t: k.t,
+                zoom: 1.0,
+                at: crate::project::Point { x: k.x, y: k.y },
+            })
+            .collect();
+        lerp_expr(&var, &ys, |k| k.at.y as f64)
+    };
+    Some((
+        format!("({x})*{}", canvas.0),
+        format!("({y})*{}", canvas.1),
+    ))
+}
+
 /// Keeps a layer visible only between its start and its end.
 pub fn enable_expr(start: Time, end: Time) -> String {
     format!(
@@ -198,8 +243,31 @@ mod tests {
     }
 
     #[test]
+    fn a_static_placement_needs_no_expression() {
+        let keys = vec![crate::project::PlaceKey { t: Time::ZERO, x: 0.6, y: 0.6 }];
+        let (x, y) = place_exprs(&keys, Time::ZERO, (640, 360)).unwrap();
+        assert_eq!(x, "(0.600000)*640");
+        assert_eq!(y, "(0.600000)*360");
+    }
+
+    #[test]
+    fn a_sliding_placement_interpolates_in_layer_time() {
+        let keys = vec![
+            crate::project::PlaceKey { t: Time::ZERO, x: 0.05, y: 0.05 },
+            crate::project::PlaceKey { t: Time::from_secs_f64(5.0), x: 0.7, y: 0.7 },
+        ];
+        // a layer that starts at 2 s: the expression must subtract that, because
+        // overlay evaluates t in program time
+        let (x, _) = place_exprs(&keys, Time::from_secs_f64(2.0), (640, 360)).unwrap();
+        assert!(x.contains("(t-2.000000)"), "{x}");
+        assert!(x.starts_with("(if(lt((t-2.000000),5.000000),0.050000+"));
+        assert!(x.ends_with(")*640"), "{x}");
+    }
+
+    #[test]
     fn visibility_is_a_time_window() {
         let e = enable_expr(Time::from_secs_f64(4.0), Time::from_secs_f64(18.5));
         assert_eq!(e, "between(t,4.000000,18.500000)");
     }
 }
+

@@ -419,6 +419,10 @@ enum Cmd {
         /// Camera centre as `x,y` in 0..1 of the layer.
         #[arg(long)]
         at: Option<String>,
+        /// Where the layer sits at this time: `x,y` in canvas fractions. Sliding
+        /// is position only — the size does not animate.
+        #[arg(long)]
+        place: Option<String>,
         /// Show the keys instead of setting one.
         #[arg(long)]
         list: bool,
@@ -1657,6 +1661,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         start,
                         place,
                         motion: None,
+                        place_keys: None,
                         clips: Vec::new(),
                     });
                     finish(&mut store, &mut media, dry_run, json!({"added": id, "z": z}))?;
@@ -1717,7 +1722,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Key { layer, t, zoom, at, list, rm, clear, dry_run } => {
+        Cmd::Key { layer, t, zoom, at, place, list, rm, clear, dry_run } => {
             let mut store = Store::open(&path)?;
             let mut media = MediaIndex::default();
             if !dry_run && !list {
@@ -1728,8 +1733,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .project
                 .layer_mut(&layer)
                 .with_context(|| format!("usage: no layer {layer}"))?;
+            let place_point = place.as_deref().map(parse_point).transpose()?;
             if clear {
                 layer_ref.motion = None;
+                layer_ref.place_keys = None;
                 return finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": 0}));
             }
             if let Some(raw) = rm {
@@ -1740,20 +1747,31 @@ fn dispatch(cli: Cli) -> Result<()> {
                         layer_ref.motion = None;
                     }
                 }
+                if let Some(keys) = layer_ref.place_keys.as_mut() {
+                    keys.retain(|k| k.t != t);
+                    if keys.is_empty() {
+                        layer_ref.place_keys = None;
+                    }
+                }
                 let keys = layer_ref.motion.as_ref().map(|m| m.keys.len()).unwrap_or(0);
                 return finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": keys}));
             }
             if list {
-                let keys: Vec<serde_json::Value> = layer_ref
+                let mut keys: Vec<serde_json::Value> = layer_ref
                     .motion
                     .as_ref()
                     .map(|m| {
                         m.keys
                             .iter()
-                            .map(|k| json!({"t": k.t.to_string(), "zoom": k.zoom, "at": {"x": k.at.x, "y": k.at.y}}))
+                            .map(|k| json!({"kind": "camera", "t": k.t.to_string(), "zoom": k.zoom, "at": {"x": k.at.x, "y": k.at.y}}))
                             .collect()
                     })
                     .unwrap_or_default();
+                if let Some(pk) = &layer_ref.place_keys {
+                    keys.extend(pk.iter().map(|k| {
+                        json!({"kind": "place", "t": k.t.to_string(), "place": {"x": k.x, "y": k.y}})
+                    }));
+                }
                 ok(json!({"layer": layer, "keys": keys}), &[]);
                 return Ok(());
             }
@@ -1762,18 +1780,31 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .map(Time::parse)
                 .transpose()?
                 .context("usage: --t <time> is required to set a key")?;
+            if zoom.is_none() && at.is_none() && place_point.is_none() {
+                bail!("usage: give --zoom/--at for a camera key, or --place x,y to slide the layer");
+            }
+            if let Some(p) = place_point {
+                let keys = layer_ref.place_keys.get_or_insert_with(Vec::new);
+                keys.retain(|k| k.t != t);
+                keys.push(crate::project::PlaceKey { t, x: p.x, y: p.y });
+                keys.sort_by_key(|k| k.t.micros());
+            }
+            let camera_wanted = zoom.is_some() || at.is_some();
             let zoom = zoom.unwrap_or(1.0);
             if zoom < 1.0 {
                 bail!("usage: --zoom must be at least 1.0 (1.0 shows the whole layer)");
             }
-            let point = at_point.unwrap_or(crate::project::Point { x: 0.5, y: 0.5 });
-            let m = layer_ref
-                .motion
-                .get_or_insert_with(|| crate::project::Motion { keys: Vec::new() });
-            m.keys.retain(|k| k.t != t);
-            m.keys.push(crate::project::Key { t, zoom, at: point });
-            m.keys.sort_by_key(|k| k.t.micros());
-            let keys = m.keys.len();
+            if camera_wanted {
+                let point = at_point.unwrap_or(crate::project::Point { x: 0.5, y: 0.5 });
+                let m = layer_ref
+                    .motion
+                    .get_or_insert_with(|| crate::project::Motion { keys: Vec::new() });
+                m.keys.retain(|k| k.t != t);
+                m.keys.push(crate::project::Key { t, zoom, at: point });
+                m.keys.sort_by_key(|k| k.t.micros());
+            }
+            let keys = layer_ref.motion.as_ref().map(|m| m.keys.len()).unwrap_or(0)
+                + layer_ref.place_keys.as_ref().map(|k| k.len()).unwrap_or(0);
             finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": keys, "t": t.to_string()}))
         }
         Cmd::Config { action } => {

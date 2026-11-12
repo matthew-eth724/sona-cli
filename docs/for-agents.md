@@ -164,8 +164,14 @@ splice key main --t 8s --zoom 1.8 --at 0.5,0.45
 ```
 
 Moving the camera costs one step: `composite`. The clip renders are unchanged, so
-a camera tweak does not re-encode footage. Placement is static — a sliding PiP is
-not expressible yet, and the tool will not pretend otherwise.
+a camera tweak does not re-encode footage. A PiP can also slide, in layer-local time:
+
+```bash
+splice key pip --t 0  --place 0.05,0.05
+splice key pip --t 5s --place 0.70,0.70
+```
+
+Position animates; size does not, so a PiP that also grows is not expressible.
 
 ## When you break it
 

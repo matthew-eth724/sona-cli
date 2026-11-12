@@ -87,6 +87,7 @@ one total order and no tie-breaking rule. Version 1's `tracks.video` is now
 | `start` | time | `0` | where this layer's t=0 sits on the program clock |
 | `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions |
 | `motion` | object | omitted | the camera: `keys: [{t, zoom, at}]`, linear between keys |
+| `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides the layer's position. `place.size` does not animate |
 | `clips` | array | required | sequential inside the layer: version 1's model, unchanged |
 
 The layer at `z: 0` must fill the canvas (`place` of `{0,0,1}`): a base layer with

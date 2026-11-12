@@ -512,8 +512,18 @@ fn composite_graph(
             };
             let end = Time::from_micros(start.micros() + duration.micros());
             let window = crate::motion::enable_expr(*start, end);
+            // A sliding layer's position is an expression in program time; a
+            // static one is two numbers.
+            let (xs, ys) = match layer
+                .place_keys
+                .as_deref()
+                .and_then(|keys| crate::motion::place_exprs(keys, *start, canvas))
+            {
+                Some((x, y)) => (format!("'{x}'"), format!("'{y}'")),
+                None => (x, y),
+            };
             chains.push(format!(
-                "[{last}][o{i}]overlay=x={x}:y={y}:eof_action=pass:enable='{window}'[l{i}]"
+                "[{last}][o{i}]overlay=x={xs}:y={ys}:eof_action=pass:enable='{window}'[l{i}]"
             ));
             last = format!("l{i}");
         }

@@ -673,7 +673,8 @@ same time.
 ## key
 
 ```
-splice key <layer> --t <time> --zoom <n> --at x,y [--dry-run]
+splice key <layer> --t <time> --zoom <n> --at x,y [--dry-run]     # camera
+splice key <layer> --t <time> --place x,y [--dry-run]            # slide the layer
 splice key <layer> --list
 splice key <layer> --rm <time> | --clear
 ```
@@ -693,6 +694,22 @@ $ splice key main --list
 A constant camera compiles to `crop`+`scale`; a moving one compiles to
 `scale`+`zoompan`. Either way the clip footage is never re-encoded: `plan` shows a
 single `composite` step whose key carries the expressions.
+
+`--place` is a **placement** key, not a camera key: it moves where the layer sits
+on the canvas, in layer-local time, and it compiles to an `overlay` x/y
+expression.
+
+```console
+$ splice key pip --t 0   --place 0.05,0.05
+$ splice key pip --t 5s  --place 0.70,0.70
+$ splice key pip --list
+{"keys":[{"kind":"place","t":"00:00:00.000","place":{"x":0.05,"y":0.05}}, …]}
+```
+
+Placement animates **position only**. A layer can slide but not grow: `scale` has
+no time variable, and faking a growing layer with a second mechanism would give
+the document two ways to say how big something is. `place.size` stays a single
+value.
 
 ## transcribe
 

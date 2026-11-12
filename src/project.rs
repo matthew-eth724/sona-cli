@@ -55,6 +55,11 @@ pub struct Layer {
     /// The camera inside this layer. Absent means "no move".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<Motion>,
+    /// Where the layer sits over time. Position only: `size` is one value, so a
+    /// layer can slide but not grow — `scale` has no time variable, and faking it
+    /// with a second mechanism is the two-representations trap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place_keys: Option<Vec<PlaceKey>>,
     /// Sequential inside a layer: version 1's model, unchanged.
     pub clips: Vec<Clip>,
 }
@@ -94,6 +99,14 @@ impl Place {
         let y = (canvas.1 as f32 * self.y).round().max(0.0) as u32;
         (x, y, side)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlaceKey {
+    /// Layer-local time: 0 is the layer's own start.
+    pub t: Time,
+    pub x: f32,
+    pub y: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -425,6 +438,7 @@ impl Project {
                     start: Time::ZERO,
                     place: Place::CANVAS,
                     motion: None,
+                    place_keys: None,
                     clips: Vec::new(),
                 }],
                 ..Tracks::default()
@@ -573,6 +587,21 @@ impl Project {
             // An empty layer is legal to store: `init` creates one, and `add`
             // needs to open the project before it can put a clip in it. Planning
             // is where "no clips" becomes an error.
+            if let Some(keys) = &l.place_keys {
+                if keys.is_empty() {
+                    bail!("layer {} has placement keys but none of them", l.id);
+                }
+                for w in keys.windows(2) {
+                    if w[1].t <= w[0].t {
+                        bail!("layer {} has placement keys out of order", l.id);
+                    }
+                }
+                for k in keys {
+                    if !(0.0..=1.0).contains(&k.x) || !(0.0..=1.0).contains(&k.y) {
+                        bail!("layer {} has a placement outside the frame", l.id);
+                    }
+                }
+            }
             if let Some(m) = &l.motion {
                 if m.keys.is_empty() {
                     bail!("layer {} has a camera with no keys", l.id);
@@ -873,6 +902,7 @@ fn upgrade_v1(old: LegacyV1) -> Project {
                 start: Time::ZERO,
                 place: Place::CANVAS,
                 motion: None,
+                place_keys: None,
                 clips: old.tracks.video,
             }],
             audio: old.tracks.audio,
@@ -1062,6 +1092,7 @@ mod tests {
             start: Time::from_secs_f64(1.0),
             place: Place { x: 0.6, y: 0.6, size: 0.3 },
             motion: None,
+            place_keys: None,
             clips: vec![clip_with("clip_9", 2.0, None)],
         });
         let mut media = MediaIndex::default();
@@ -1081,6 +1112,7 @@ mod tests {
             start: Time::ZERO,
             place: Place::CANVAS,
             motion: None,
+            place_keys: None,
             clips: vec![clip_with("clip_9", 1.0, None)],
         });
         p.tracks.layers.push(Layer {
@@ -1089,6 +1121,7 @@ mod tests {
             start: Time::ZERO,
             place: Place::CANVAS,
             motion: None,
+            place_keys: None,
             clips: vec![clip_with("clip_8", 1.0, None)],
         });
         let order: Vec<&str> = p.by_z().iter().map(|l| l.id.as_str()).collect();
@@ -1116,6 +1149,7 @@ mod tests {
             start: Time::ZERO,
             place: Place::CANVAS,
             motion: None,
+            place_keys: None,
             clips: vec![clip_with("clip_2", 1.0, None)],
         });
         assert!(dup.validate().unwrap_err().to_string().contains("share z"));
