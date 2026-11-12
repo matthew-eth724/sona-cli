@@ -65,6 +65,10 @@ $ npm install -g splice-cli
 $ splice doctor
 ```
 
+Newest work ships under the `next` label until someone has run it on macOS and
+Windows: `npm install -g splice-cli@next`. Promotion to default is one command
+(`npm dist-tag add splice-cli@<version> latest`).
+
 Per-platform binaries (Linux x64/arm64, macOS x64/arm64, Windows x64) resolved by
 npm as optional dependencies — nothing is downloaded at install time, and
 `npm ci --ignore-scripts` still works. Linux builds are static, so they run on
@@ -80,14 +84,21 @@ $ splice config set deepgram.model nova-3
 $ splice config list          # set?, from where, and which model wins — never the value
 ```
 
-**ffmpeg is required and is not bundled.** `splice` shells out to `ffmpeg` and
-`ffprobe`, and the build must have `libx264`, `libass` and `freetype`:
+**ffmpeg is required and is not bundled yet.** `splice` shells out to `ffmpeg` and
+`ffprobe`, and the build must have `libx264` and `libass` — `drawtext` and
+freetype are no longer needed, because titles burn through the same ASS filter
+captions do:
 
 ```console
 $ brew install ffmpeg            # macOS
 $ sudo apt install ffmpeg        # Debian/Ubuntu
 $ winget install Gyan.FFmpeg     # Windows, then open a new terminal
 ```
+
+Resolution order, so a bundled copy can win without touching `PATH`:
+`SPLICE_FFMPEG` (a directory holding both, or a path whose sibling `ffprobe` is
+preferred), then a sibling of the `splice` binary, then `PATH`. `doctor` names the
+file it chose and which rule chose it.
 
 Fonts need no config: lookup tries `SPLICE_FONT`, then `fc-match`, then fonts the
 OS already ships (`C:\Windows\Fonts\segoeui.ttf`, `/System/Library/Fonts/…`,
@@ -176,15 +187,19 @@ script paths; `tools/check-skill-mirror.sh` fails when they drift.
 
 ## Status
 
-66 unit tests, and every command above has been driven end to end against real
+107 unit tests, and every command above has been driven end to end against real
 footage — including an 8-minute 4:3 source at 23.976 fps, which is where the
 retiming-order and preview-encoder bugs were found.
 
-**Not implemented, and not documented as if it were:** transcription through
-whisper (Gemini and Deepgram are wired; whisper is an external binary and
-`--provider whisper` says so), multi-track compositing and keyframes (the document models layers and camera keys
-and refuses to render them — see `design-compositing.md`), and bundled ffmpeg
-(see `design-portable.md`).
+Implemented and proven: transcription through Gemini, Deepgram and whisper.cpp;
+multi-track compositing with camera keyframes, sliding placement, masks and
+grading; speed ramps; titles and captions on one ASS engine.
+
+**Not yet true, and not written as if it were:** no release has been run by a
+person on macOS, and only `doctor` has run on Windows. ffmpeg is not bundled in
+the npm packages — the slim static build works and is measured (14 MB + 13 MB,
+5.4 MB gzipped each), but the macOS and Windows recipes are unwritten. Both are
+tracked in [docs/design-portable.md](docs/design-portable.md).
 
 ## Licence
 
