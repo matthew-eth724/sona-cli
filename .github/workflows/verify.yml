@@ -86,6 +86,10 @@ jobs:
   provider:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
+    # `secrets` is not allowed in a step-level `if`, so it comes in through env and
+    # the step tests that: an absent secret skips the step instead of failing it.
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -93,9 +97,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: cargo build --release
       - name: live transcription (needs GEMINI_API_KEY)
-        if: ${{ secrets.GEMINI_API_KEY != '' }}
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        if: env.GEMINI_API_KEY != ''
         run: |
           # The key travels in the environment, never argv and never the project.
           mkdir -p "$RUNNER_TEMP/cfg"
