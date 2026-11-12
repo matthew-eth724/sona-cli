@@ -1928,8 +1928,10 @@ mod tests {
         // A sibling reached through `..` never becomes `../shared/...`; it
         // stays absolute so moving the project cannot invent a parent.
         let stored = store.stored_path(&dir.join("project").join("..").join("shared").join("a.mp4"));
+        // Canonical first: a temp dir may be reached through a symlink, so the
+        // stored form is the canonical spelling, never the symlinked one.
         assert!(std::path::Path::new(&stored).is_absolute(), "{stored} is not absolute");
-        assert_eq!(stored, outside.to_string_lossy());
+        assert_eq!(stored, outside.canonicalize().unwrap().to_string_lossy());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1948,7 +1950,9 @@ mod tests {
             project: Project::new(640, 360, Rational::new(30, 1)),
         };
         let stored = store.stored_path(&file);
-        assert_eq!(stored, file.to_string_lossy());
+        // Canonical first: a temp dir may be reached through a symlink, so the
+        // stored form is the canonical spelling, never the symlinked one.
+        assert_eq!(stored, file.canonicalize().unwrap().to_string_lossy());
         let _ = std::fs::remove_dir_all(&proj);
         let _ = std::fs::remove_dir_all(&other);
     }
