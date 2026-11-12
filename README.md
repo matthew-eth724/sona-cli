@@ -182,14 +182,21 @@ it costs a re-render and an undo stack, never content.
 | [docs/design-compositing.md](docs/design-compositing.md) | the compositor and keyframes design |
 | [docs/design-portable.md](docs/design-portable.md) | bundling ffmpeg and fonts so one install needs nothing |
 
-The verification skill (launch, doctor, drive, capture, cleanup, eleven-feature map)
-ships twice: `.claude/skills/verify/` for Claude Code and `.agents/skills/verify/`
-for harnesses that read `.agents/`. The trees are identical except for their own
-script paths; `tools/check-skill-mirror.sh` fails when they drift.
+Two skills ship in the repo, each twice — `.claude/skills/<name>/` for Claude Code
+and `.agents/skills/<name>/` for harnesses that read `.agents/`. The trees are
+identical except for their own script paths; `tools/check-skill-mirror.sh` fails
+when they drift.
+
+- **`verify`** — for working on splice: launch, doctor, drive, capture, cleanup, and
+  an eleven-feature map.
+- **`splice`** — for *using* splice, from any project: the edit loop, the JSON
+  contract, where paths and layers surprise people, a command reference, an
+  error-code table, and `scripts/smoke.sh`, which proves an install end to end in a
+  throwaway directory and refuses to run against a binary older than 0.1.4.
 
 ## Status
 
-107 unit tests, and every command above has been driven end to end against real
+144 unit tests, and every command above has been driven end to end against real
 footage — including an 8-minute 4:3 source at 23.976 fps, which is where the
 retiming-order and preview-encoder bugs were found.
 
