@@ -14,6 +14,65 @@ pub struct Project {
     pub version: u32,
     pub canvas: Canvas,
     pub tracks: Tracks,
+    /// A look applied to the whole program. Lives above the clips so changing it
+    /// re-encodes one step, not every clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grade: Option<Grade>,
+}
+
+/// Colour adjustment. Every field is optional so a project can set one knob.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Grade {
+    /// -1.0 dark to 1.0 bright.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brightness: Option<f32>,
+    /// 1.0 unchanged, 0 flat grey, 2 high contrast.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contrast: Option<f32>,
+    /// 0 grey, 1 unchanged, 2 vivid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saturation: Option<f32>,
+    /// 1.0 unchanged, above 1 lifts midtones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gamma: Option<f32>,
+    /// A `.cube` 3D LUT. Path, resolved against the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut: Option<String>,
+}
+
+impl Grade {
+    pub fn is_noop(&self) -> bool {
+        self.brightness.is_none()
+            && self.contrast.is_none()
+            && self.saturation.is_none()
+            && self.gamma.is_none()
+            && self.lut.is_none()
+    }
+
+    /// The `eq` filter, only if at least one knob is set.
+    pub fn eq(&self) -> Option<String> {
+        if self.brightness.is_none()
+            && self.contrast.is_none()
+            && self.saturation.is_none()
+            && self.gamma.is_none()
+        {
+            return None;
+        }
+        let mut parts = Vec::new();
+        if let Some(v) = self.brightness {
+            parts.push(format!("brightness={v:.4}"));
+        }
+        if let Some(v) = self.contrast {
+            parts.push(format!("contrast={v:.4}"));
+        }
+        if let Some(v) = self.saturation {
+            parts.push(format!("saturation={v:.4}"));
+        }
+        if let Some(v) = self.gamma {
+            parts.push(format!("gamma={v:.4}"));
+        }
+        Some(format!("eq={}", parts.join(":")))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,6 +119,9 @@ pub struct Layer {
     /// with a second mechanism is the two-representations trap.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place_keys: Option<Vec<PlaceKey>>,
+    /// Knock part of the layer out, or darken its edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask: Option<Mask>,
     /// Sequential inside a layer: version 1's model, unchanged.
     pub clips: Vec<Clip>,
 }
@@ -98,6 +160,47 @@ impl Place {
         let x = (canvas.0 as f32 * self.x).round().max(0.0) as u32;
         let y = (canvas.1 as f32 * self.y).round().max(0.0) as u32;
         (x, y, side)
+    }
+}
+
+/// What a layer keeps visible.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mask {
+    /// Remove a colour, leaving alpha: the green-screen case.
+    Chroma {
+        /// Any ffmpeg colour: `0x00FF00`, `green`, `#0f0`.
+        color: String,
+        #[serde(default = "chroma_similarity")]
+        similarity: f32,
+        #[serde(default)]
+        blend: f32,
+    },
+    /// Darken the edges.
+    Vignette {
+        #[serde(default = "vignette_angle")]
+        angle: f32,
+    },
+}
+
+fn chroma_similarity() -> f32 {
+    0.30
+}
+
+fn vignette_angle() -> f32 {
+    0.628
+}
+
+impl Mask {
+    /// The filter that applies it, if any.
+    pub fn chain(&self) -> String {
+        match self {
+            Mask::Chroma { color, similarity, blend } => format!(
+                "colorkey={}:{similarity:.4}:{blend:.4}",
+                color
+            ),
+            Mask::Vignette { angle } => format!("vignette=angle={angle:.4}"),
+        }
     }
 }
 
@@ -431,6 +534,7 @@ impl Project {
         Project {
             version: VERSION,
             canvas: Canvas { width, height, fps },
+            grade: None,
             tracks: Tracks {
                 layers: vec![Layer {
                     id: "main".into(),
@@ -439,6 +543,7 @@ impl Project {
                     place: Place::CANVAS,
                     motion: None,
                     place_keys: None,
+                    mask: None,
                     clips: Vec::new(),
                 }],
                 ..Tracks::default()
@@ -559,6 +664,28 @@ impl Project {
         if self.tracks.layers.is_empty() {
             bail!("project has no layers");
         }
+        if let Some(g) = &self.grade {
+            if let Some(v) = g.brightness {
+                if !(-1.0..=1.0).contains(&v) {
+                    bail!("grade brightness must be between -1 and 1");
+                }
+            }
+            if let Some(v) = g.contrast {
+                if !(0.0..=4.0).contains(&v) {
+                    bail!("grade contrast must be between 0 and 4");
+                }
+            }
+            if let Some(v) = g.saturation {
+                if !(0.0..=4.0).contains(&v) {
+                    bail!("grade saturation must be between 0 and 4");
+                }
+            }
+            if let Some(v) = g.gamma {
+                if !(0.05..=10.0).contains(&v) {
+                    bail!("grade gamma must be between 0.05 and 10");
+                }
+            }
+        }
         let mut zs: Vec<i32> = self.tracks.layers.iter().map(|l| l.z).collect();
         zs.sort();
         for pair in zs.windows(2) {
@@ -587,6 +714,16 @@ impl Project {
             // An empty layer is legal to store: `init` creates one, and `add`
             // needs to open the project before it can put a clip in it. Planning
             // is where "no clips" becomes an error.
+            if let Some(Mask::Chroma { similarity, blend, .. }) = &l.mask {
+                if !(0.0..=1.0).contains(similarity) || !(0.0..=1.0).contains(blend) {
+                    bail!("layer {} has a chroma mask outside 0..1", l.id);
+                }
+            }
+            if let Some(Mask::Vignette { angle }) = &l.mask {
+                if !(0.0..=3.2).contains(angle) {
+                    bail!("layer {} has a vignette angle outside 0..3.2 radians", l.id);
+                }
+            }
             if let Some(keys) = &l.place_keys {
                 if keys.is_empty() {
                     bail!("layer {} has placement keys but none of them", l.id);
@@ -895,6 +1032,7 @@ fn upgrade_v1(old: LegacyV1) -> Project {
     Project {
         version: VERSION,
         canvas: old.canvas,
+        grade: None,
         tracks: Tracks {
             layers: vec![Layer {
                 id: "main".into(),
@@ -903,6 +1041,7 @@ fn upgrade_v1(old: LegacyV1) -> Project {
                 place: Place::CANVAS,
                 motion: None,
                 place_keys: None,
+                mask: None,
                 clips: old.tracks.video,
             }],
             audio: old.tracks.audio,
@@ -989,6 +1128,47 @@ impl Store {
 mod tests {
     use super::*;
     use crate::media::MediaIndex;
+
+    #[test]
+    fn a_grade_only_emits_the_knobs_that_are_set() {
+        let g = Grade {
+            brightness: Some(0.1),
+            contrast: None,
+            saturation: Some(1.5),
+            gamma: None,
+            lut: None,
+        };
+        assert_eq!(g.eq().unwrap(), "eq=brightness=0.1000:saturation=1.5000");
+        assert!(Grade::default().eq().is_none());
+        assert!(Grade::default().is_noop());
+    }
+
+    #[test]
+    fn a_mask_compiles_to_the_filter_that_does_it() {
+        let chroma = Mask::Chroma {
+            color: "0x00FF00".into(),
+            similarity: 0.3,
+            blend: 0.0,
+        };
+        assert_eq!(chroma.chain(), "colorkey=0x00FF00:0.3000:0.0000");
+        let vig = Mask::Vignette { angle: 0.628 };
+        assert_eq!(vig.chain(), "vignette=angle=0.6280");
+    }
+
+    #[test]
+    fn grade_ranges_are_rejected_outside_their_bounds() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.grade = Some(Grade {
+            brightness: Some(2.0),
+            ..Default::default()
+        });
+        assert!(p.validate().unwrap_err().to_string().contains("brightness"));
+        p.grade = Some(Grade {
+            saturation: Some(-1.0),
+            ..Default::default()
+        });
+        assert!(p.validate().is_err());
+    }
 
     #[test]
     fn a_version_1_document_upgrades_to_one_main_layer() {
@@ -1093,6 +1273,7 @@ mod tests {
             place: Place { x: 0.6, y: 0.6, size: 0.3 },
             motion: None,
             place_keys: None,
+            mask: None,
             clips: vec![clip_with("clip_9", 2.0, None)],
         });
         let mut media = MediaIndex::default();
@@ -1113,6 +1294,7 @@ mod tests {
             place: Place::CANVAS,
             motion: None,
             place_keys: None,
+            mask: None,
             clips: vec![clip_with("clip_9", 1.0, None)],
         });
         p.tracks.layers.push(Layer {
@@ -1122,6 +1304,7 @@ mod tests {
             place: Place::CANVAS,
             motion: None,
             place_keys: None,
+            mask: None,
             clips: vec![clip_with("clip_8", 1.0, None)],
         });
         let order: Vec<&str> = p.by_z().iter().map(|l| l.id.as_str()).collect();
@@ -1150,6 +1333,7 @@ mod tests {
             place: Place::CANVAS,
             motion: None,
             place_keys: None,
+            mask: None,
             clips: vec![clip_with("clip_2", 1.0, None)],
         });
         assert!(dup.validate().unwrap_err().to_string().contains("share z"));

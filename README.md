@@ -112,7 +112,7 @@ required encoder, rather than letting you find out at render time.
 | setup | `init` `doctor` |
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
 | layers | `layer` `key` |
-| picture | `text` `image` `transition` |
+| picture | `text` `image` `transition` `mask` `grade` |
 | sound | `audio` `duck` `caption` |
 | read | `transcribe` `index` `view` `find` `scenes` |
 | tighten | `cut` |

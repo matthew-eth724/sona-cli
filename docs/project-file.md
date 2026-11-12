@@ -74,6 +74,21 @@ in memory on open and written back as version 2 on the next save. Nothing is los
 in the upgrade: v1 was always exactly one layer, named `main`, at `z: 0`, filling
 the canvas, with no camera.
 
+## grade
+
+An optional look for the whole program. Absent means none of it.
+
+| field | type | range | notes |
+| --- | --- | --- | --- |
+| `brightness` | f32 | -1..1 | dark to bright |
+| `contrast` | f32 | 0..4 | 1 is unchanged |
+| `saturation` | f32 | 0..4 | 0 is grey, 1 unchanged |
+| `gamma` | f32 | 0.05..10 | 1 unchanged |
+| `lut` | string | — | path to a `.cube` 3D LUT, resolved against the project |
+
+Applied in one `eq` (plus `lut3d`) before captions and overlays, so text is not
+graded along with the picture.
+
 ## tracks.layers
 
 An unordered array; **`z` is the stacking order** and it is unique, so there is
@@ -87,6 +102,7 @@ one total order and no tie-breaking rule. Version 1's `tracks.video` is now
 | `start` | time | `0` | where this layer's t=0 sits on the program clock |
 | `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions |
 | `motion` | object | omitted | the camera: `keys: [{t, zoom, at}]`, linear between keys |
+| `mask` | object | omitted | `{kind:"chroma", color, similarity, blend}` or `{kind:"vignette", angle}` |
 | `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides the layer's position. `place.size` does not animate |
 | `clips` | array | required | sequential inside the layer: version 1's model, unchanged |
 

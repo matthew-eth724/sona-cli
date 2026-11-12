@@ -406,6 +406,47 @@ enum Cmd {
         #[command(subcommand)]
         action: LayerCmd,
     },
+    /// Mask a layer: chroma key or vignette.
+    Mask {
+        /// The layer id.
+        layer: String,
+        /// Remove this colour, leaving alpha. `0x00FF00`, `green`, ...
+        #[arg(long)]
+        chroma: Option<String>,
+        #[arg(long, default_value = "0.30")]
+        similarity: f32,
+        #[arg(long, default_value = "0.0")]
+        blend: f32,
+        /// Darken the layer's edges instead.
+        #[arg(long)]
+        vignette: bool,
+        #[arg(long, default_value = "0.628")]
+        angle: f32,
+        /// Remove the mask.
+        #[arg(long)]
+        none: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Adjust the look of the whole program: brightness, contrast, LUT.
+    Grade {
+        #[arg(long, allow_hyphen_values = true)]
+        brightness: Option<f32>,
+        #[arg(long, allow_hyphen_values = true)]
+        contrast: Option<f32>,
+        #[arg(long, allow_hyphen_values = true)]
+        saturation: Option<f32>,
+        #[arg(long, allow_hyphen_values = true)]
+        gamma: Option<f32>,
+        /// A .cube 3D LUT.
+        #[arg(long)]
+        lut: Option<PathBuf>,
+        /// Remove every adjustment.
+        #[arg(long)]
+        clear: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Set a camera keyframe on a layer: zoom and where it looks.
     Key {
         /// The layer id.
@@ -1662,6 +1703,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                         place,
                         motion: None,
                         place_keys: None,
+                        mask: None,
                         clips: Vec::new(),
                     });
                     finish(&mut store, &mut media, dry_run, json!({"added": id, "z": z}))?;
@@ -1721,6 +1763,95 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
             Ok(())
+        }
+        Cmd::Mask { layer, chroma, similarity, blend, vignette, angle, none, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            if !dry_run {
+                crate::history::record(&store, "mask")?;
+            }
+            let mask = if none {
+                None
+            } else {
+                match (chroma, vignette) {
+                    (Some(color), false) => Some(crate::project::Mask::Chroma {
+                        color,
+                        similarity,
+                        blend,
+                    }),
+                    (None, true) => Some(crate::project::Mask::Vignette { angle }),
+                    (Some(_), true) => bail!("usage: pass --chroma or --vignette, not both"),
+                    (None, false) => bail!("usage: pass --chroma <color>, --vignette, or --none"),
+                }
+            };
+            let z = store
+                .project
+                .layer(&layer)
+                .with_context(|| format!("usage: no layer {layer}"))?
+                .z;
+            if mask.is_some() && z == 0 {
+                bail!(
+                    "usage: {layer} is the bottom layer; a mask there reveals nothing. Mask a layer above z = 0, or add one with `splice layer add`"
+                );
+            }
+            let l = store
+                .project
+                .layer_mut(&layer)
+                .with_context(|| format!("usage: no layer {layer}"))?;
+            l.mask = mask.clone();
+            store.project.validate()?;
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({"changed": [layer], "mask": mask.map(|m| m.chain())}),
+            )
+        }
+        Cmd::Grade { brightness, contrast, saturation, gamma, lut, clear, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            if !dry_run {
+                crate::history::record(&store, "grade")?;
+            }
+            if clear {
+                store.project.grade = None;
+                return finish(&mut store, &mut media, dry_run, json!({"changed": ["grade"], "cleared": true}));
+            }
+            let lut_path = match lut {
+                Some(p) => {
+                    let abs = std::fs::canonicalize(&p)
+                        .with_context(|| format!("no such LUT: {}", p.display()))?;
+                    Some(abs.to_string_lossy().to_string())
+                }
+                None => None,
+            };
+            let existing = store.project.grade.clone().unwrap_or_default();
+            let grade = crate::project::Grade {
+                brightness: brightness.or(existing.brightness),
+                contrast: contrast.or(existing.contrast),
+                saturation: saturation.or(existing.saturation),
+                gamma: gamma.or(existing.gamma),
+                lut: lut_path.or(existing.lut),
+            };
+            if grade.is_noop() {
+                bail!("usage: give at least one of --brightness, --contrast, --saturation, --gamma, --lut");
+            }
+            store.project.grade = Some(grade.clone());
+            // validate the ranges now rather than at render time
+            store.project.validate()?;
+            finish(
+                &mut store,
+                &mut media,
+                dry_run,
+                json!({
+                    "changed": ["grade"],
+                    "brightness": grade.brightness,
+                    "contrast": grade.contrast,
+                    "saturation": grade.saturation,
+                    "gamma": grade.gamma,
+                    "lut": grade.lut,
+                }),
+            )
         }
         Cmd::Key { layer, t, zoom, at, place, list, rm, clear, dry_run } => {
             let mut store = Store::open(&path)?;

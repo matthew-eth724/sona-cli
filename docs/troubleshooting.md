@@ -21,6 +21,7 @@ $ splice doctor
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |
 | `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
 | `config_loose_perms` | — (warning) | the config file is readable by other users | `chmod 600 <path>`, shown in the fix |
+| `project_invalid: grade …` | 2 | a grade knob outside its range | the message names the field and the bounds |
 | `layer_audio_dropped` | — (warning) | an overlay layer has audio, which is not heard | move those clips to `main` |
 | `place_off_canvas` | — (warning) | a layer's placement runs past the right edge | `splice layer set <id> --place 0.6,y,size` |
 | `asr_no_key` | 2 | no provider has a key | `splice config set gemini.api_key --stdin` (or deepgram) |
@@ -163,6 +164,13 @@ lookup tries `SPLICE_FONT`, then `fc-match`, then fonts that ship with the OS
 `/usr/share/fonts/truetype/dejavu/...`). `fc-match` does not exist on a clean
 Windows or macOS install, which is why the built-in paths exist. `doctor` reports
 which source won.
+
+**A chroma key left a green fringe.** Raise `--similarity` (0.3 default) or add
+`--blend` for soft edges; a LUT and a key on the same layer both work, the key
+runs first.
+
+**`mask` refuses a layer at z = 0.** There is nothing underneath it to reveal.
+Mask a layer above, or `splice layer add`.
 
 **A key I set isn't being used.** `splice config list` shows `source` per key.
 `env` means an environment variable is overriding the file — that is deliberate,

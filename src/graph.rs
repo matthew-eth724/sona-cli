@@ -481,6 +481,10 @@ fn composite_graph(
         if start.micros() != 0 {
             chain.push(format!("setpts=PTS+{:.6}/TB", start.secs_f64()));
         }
+        // A mask shapes the layer's frame; it belongs before placement scales it.
+        if let Some(mask) = &layer.mask {
+            chain.push(mask.chain());
+        }
         if let Some(m) = &layer.motion {
             let l = crate::motion::lowering(m);
             if let Some(c) = crate::motion::static_chain(&l, canvas) {
@@ -619,6 +623,7 @@ pub fn plan(
         .overlays
         .iter()
         .any(|o| matches!(o, Overlay::Text(_)));
+    let has_grade = project.grade.as_ref().map(|g| !g.is_noop()).unwrap_or(false);
     let has_images = project.tracks.overlays.iter().any(|o| o.is_image());
     let has_captions = project
         .tracks
@@ -629,10 +634,11 @@ pub fn plan(
     let has_bed = project.tracks.audio.is_some();
     let mut extra_inputs: Vec<String> = Vec::new();
 
-    if has_text || has_images || has_captions || has_bed {
+    if has_text || has_images || has_captions || has_bed || has_grade {
         let mut inv = Invocation::new();
         inv.input(&base_path);
         let mut next_input = 1usize;
+        let _ = has_grade;
         let bed_input = if has_bed { 1 } else { 0 };
         if has_captions {
             let caps = project.tracks.captions.as_ref().unwrap();
@@ -822,6 +828,16 @@ fn build_filter_graph(
     bed_input: usize,
 ) -> Result<String> {
     let mut vf: Vec<String> = Vec::new();
+    // Grading first: a look applies to the picture, not to the text laid over it.
+    if let Some(g) = &project.grade {
+        if let Some(eq) = g.eq() {
+            vf.push(eq);
+        }
+        if let Some(lut) = &g.lut {
+            let path = store.resolve(lut);
+            vf.push(format!("lut3d=file={}", filter_escape(&path, &store.dir())));
+        }
+    }
     if has_captions {
         let caps = project.tracks.captions.as_ref().unwrap();
         let srt = store.resolve(&caps.source);

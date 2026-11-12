@@ -173,6 +173,17 @@ splice key pip --t 5s --place 0.70,0.70
 
 Position animates; size does not, so a PiP that also grows is not expressible.
 
+## Look and keying
+
+```bash
+splice grade --brightness 0.1 --saturation 1.4   # one look for the whole program
+splice grade --lut film.cube
+splice mask pip --chroma 0x00FF00 --similarity 0.3
+```
+
+A grade is one step's worth of change (the burn step), and a mask is part of the
+composite step. Neither re-encodes clip footage.
+
 ## When you break it
 
 Every mutation snapshots the document first:

@@ -642,6 +642,52 @@ never overwrite the other.
 Stills are never upscaled: a proxy still comes out at proxy size, which is both
 honest and cheaper to read.
 
+## grade
+
+```
+splice grade [--brightness -1..1] [--contrast 0..4] [--saturation 0..4]
+             [--gamma 0.05..10] [--lut <file.cube>] [--clear] [--dry-run]
+```
+
+One look applied to the whole program, compiled into a single `eq` filter (plus
+`lut3d` when a LUT is given) and **placed before the text and captions**, so a
+grade changes the picture and not the words on top of it.
+
+```console
+$ splice grade --brightness 0.15 --contrast 1.3 --saturation 1.6
+{"ok":true,"changed":["grade"],"brightness":0.15,"contrast":1.3,"saturation":1.6,"lut":null}
+```
+
+Measured on a test pattern: mean luma 125 → 158 and saturation 113 → 144, which
+is what those numbers ask for. An identity LUT lands within 43.5 dB of the
+ungraded render, so the wiring does not tint anything by itself.
+
+Knobs not given keep their previous value, so `splice grade --gamma 1.2` after a
+contrast setting does not reset the contrast. `--clear` removes the lot.
+
+## mask
+
+```
+splice mask <layer> --chroma <color> [--similarity 0.30] [--blend 0.0]
+splice mask <layer> --vignette [--angle 0.628]
+splice mask <layer> --none
+```
+
+A mask shapes one layer's frames, before placement scales them, so it composes
+with a picture-in-picture.
+
+```console
+$ splice mask pip --chroma 0x00FF00 --similarity 0.3
+{"ok":true,"changed":["pip"],"mask":"colorkey=0x00FF00:0.3000:0.0000"}
+```
+
+Verified on a green card over a blue base: at one pixel the unkeyed render shows
+green (1,254,0) and the keyed render shows the base (35,68,171); a red patch
+survives in both; outside the layer both are identical.
+
+A mask on the layer at `z = 0` is refused: there is nothing underneath it to
+reveal.
+
 ## layer
 
 ```
