@@ -18,6 +18,10 @@ pub struct Project {
     /// re-encodes one step, not every clip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grade: Option<Grade>,
+    /// Where a relative `source` resolves from: the directory holding
+    /// `splice.json`. Not serialized, so a document keeps its relative paths.
+    #[serde(skip)]
+    pub root: PathBuf,
 }
 
 /// Colour adjustment. Every field is optional so a project can set one knob.
@@ -581,6 +585,18 @@ impl Project {
                 }],
                 ..Tracks::default()
             },
+            root: PathBuf::new(),
+        }
+    }
+
+    /// A stored path, resolved against the project's directory. An absolute
+    /// path, or a project with no root, is returned unchanged.
+    pub fn resolve(&self, stored: &str) -> PathBuf {
+        let p = Path::new(stored);
+        if p.is_absolute() || self.root.as_os_str().is_empty() {
+            p.to_path_buf()
+        } else {
+            self.root.join(p)
         }
     }
 
@@ -592,7 +608,7 @@ impl Project {
         for layer in &self.tracks.layers {
             let mut total = layer.start.micros();
             for (i, c) in layer.clips.iter().enumerate() {
-                let d = match media.get(Path::new(&c.source)) {
+                let d = match media.get(&self.resolve(&c.source)) {
                     Ok(m) => c.out_duration(m.duration),
                     Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
                 };
@@ -612,7 +628,7 @@ impl Project {
     pub fn duration_of_layer(&self, media: &mut MediaIndex, layer: &Layer) -> Time {
         let mut total = 0i64;
         for (i, c) in layer.clips.iter().enumerate() {
-            let d = match media.get(Path::new(&c.source)) {
+            let d = match media.get(&self.resolve(&c.source)) {
                 Ok(m) => c.out_duration(m.duration),
                 Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
             };
@@ -833,8 +849,8 @@ impl Project {
         for layer in &self.tracks.layers {
             for (i, c) in layer.clips.iter().enumerate() {
             let at = format!("tracks.layers[{}].clips[{i}]", layer.id);
-            let path = Path::new(&c.source);
-            match media.get(path) {
+            let path = self.resolve(&c.source);
+            match media.get(&path) {
                 Ok(m) => {
                     if let Some(end) = c.src_out {
                         if end > m.duration {
@@ -876,7 +892,7 @@ impl Project {
         for layer in &self.tracks.layers {
             let mut prev_len = Time::ZERO;
             for (i, c) in layer.clips.iter().enumerate() {
-            let len = match media.get(Path::new(&c.source)) {
+            let len = match media.get(&self.resolve(&c.source)) {
                 Ok(m) => c.out_duration(m.duration),
                 Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
             };
@@ -924,7 +940,7 @@ impl Project {
             // overlay layer's audio in silence.
             if l.clips
                 .iter()
-                .any(|c| media.get(Path::new(&c.source)).map(|m| m.has_audio).unwrap_or(false))
+                .any(|c| media.get(&self.resolve(&c.source)).map(|m| m.has_audio).unwrap_or(false))
             {
                 out.push(
                     Diagnostic::new(
@@ -952,7 +968,7 @@ impl Project {
             }
         }
         if let Some(caps) = &self.tracks.captions {
-            if !Path::new(&caps.source).exists() {
+            if !self.resolve(&caps.source).exists() {
                 out.push(
                     Diagnostic::new(
                         "captions_missing",
@@ -986,7 +1002,7 @@ impl Project {
         }
         for (i, o) in self.tracks.overlays.iter().enumerate() {
             if let Overlay::Image(img) = o {
-                if !Path::new(&img.source).exists() {
+                if !self.resolve(&img.source).exists() {
                     out.push(
                         Diagnostic::new(
                             "overlay_image_missing",
@@ -1111,6 +1127,13 @@ fn absolute(p: &Path) -> PathBuf {
     }
 }
 
+/// The directory a project's relative paths resolve from: the directory
+/// holding the project file, made absolute so the spelling of `--project`
+/// cannot leak into a resolved path or a cache key.
+fn store_root(path: &Path) -> PathBuf {
+    absolute(path).parent().unwrap_or(Path::new(".")).to_path_buf()
+}
+
 /// Version 1 kept every clip in one flat list. Kept only to read old documents;
 /// nothing writes it.
 #[derive(Deserialize)]
@@ -1159,6 +1182,7 @@ fn upgrade_v1(old: LegacyV1) -> Project {
             captions: old.tracks.captions,
             index: old.tracks.index,
         },
+        root: PathBuf::new(),
     }
 }
 
@@ -1173,10 +1197,10 @@ impl Store {
         if path.exists() {
             bail!("{} already exists", path.display());
         }
-        let store = Store {
-            path: absolute(path),
-            project: Project::new(width, height, fps),
-        };
+        let abs = absolute(path);
+        let mut project = Project::new(width, height, fps);
+        project.root = store_root(&abs);
+        let store = Store { path: abs, project };
         store.save()?;
         fs::create_dir_all(store.cache_dir())?;
         Ok(store)
@@ -1188,7 +1212,7 @@ impl Store {
         let value: serde_json::Value = serde_json::from_str(&raw)
             .with_context(|| format!("{} is not valid JSON", path.display()))?;
         let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-        let project: Project = match version {
+        let mut project: Project = match version {
             1 => upgrade_v1(
                 serde_json::from_value(value)
                     .with_context(|| format!("{} is not a valid version-1 project", path.display()))?,
@@ -1199,11 +1223,10 @@ impl Store {
                 "unsupported project version {other} (this build reads 1 and {VERSION})"
             ),
         };
+        let abs = absolute(path);
+        project.root = store_root(&abs);
         project.validate()?;
-        Ok(Store {
-            path: absolute(path),
-            project,
-        })
+        Ok(Store { path: abs, project })
     }
 
     pub fn dir(&self) -> PathBuf {
@@ -1215,12 +1238,7 @@ impl Store {
     }
 
     pub fn resolve(&self, rel: &str) -> PathBuf {
-        let p = Path::new(rel);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            self.dir().join(p)
-        }
+        self.project.resolve(rel)
     }
 
     /// Atomic replace: write beside, then rename. On Windows the rename
@@ -1629,5 +1647,147 @@ mod tests {
         for d in p.diagnose(&mut media) {
             assert!(d.fix.is_some(), "{} has no fix", d.code);
         }
+    }
+
+    #[test]
+    fn store_root_is_always_absolute() {
+        // A bare relative project name must not yield an empty root: that was
+        // the regression where `splice render --project splice.json` resolved
+        // media against the cwd and produced a different stdout/cache key than
+        // an absolute `--project`.
+        let root = store_root(Path::new("splice.json"));
+        assert!(root.is_absolute(), "root of a bare project name is empty: {root:?}");
+        assert_eq!(root, std::env::current_dir().unwrap());
+
+        // A deep relative path resolves to the directory holding the file.
+        assert_eq!(
+            store_root(Path::new("a/b/c/splice.json")),
+            std::env::current_dir().unwrap().join("a/b/c")
+        );
+
+        // An absolute path keeps its own directory.
+        let abs = std::env::temp_dir().join("proj").join("splice.json");
+        assert_eq!(store_root(&abs), std::env::temp_dir().join("proj"));
+    }
+
+    #[test]
+    fn a_relative_source_resolves_against_the_root() {
+        let dir = std::env::temp_dir().join(format!("splice-resolve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            resolve_root_test_body(&dir)
+        }));
+        let _ = std::fs::remove_dir_all(&dir);
+        result.expect("relative-source resolve test panicked");
+    }
+
+    fn resolve_root_test_body(dir: &Path) {
+        let ffmpeg_ok = std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ffmpeg_ok {
+            eprintln!("skipping a_relative_source_resolves_against_the_root: ffmpeg not found");
+            return;
+        }
+
+        std::fs::create_dir_all(dir.join("media")).unwrap();
+
+        // A 1 s clip the resolver must find relative to root.
+        let media_path = dir.join("media").join("a.mp4");
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                media_path.to_str().expect("temp path is utf-8"),
+            ])
+            .status()
+            .expect("ffmpeg is required to probe media in this test");
+        assert!(status.success(), "ffmpeg must be able to write the test clip");
+
+        // A relative captions source under root.
+        let srt_path = dir.join("subs.srt");
+        std::fs::write(&srt_path, "1\n00:00:00,500 --> 00:00:03,000\nShip faster.\n").unwrap();
+
+        // A relative image overlay source under root (a 1x1 PNG, magic bytes).
+        let png_path = dir.join("logo.png");
+        std::fs::write(&png_path, &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+        ]).unwrap();
+
+        let mut project = Project::new(640, 360, Rational::new(30, 1));
+        project.root = dir.to_path_buf();
+
+        // resolve itself must join the real relative root. This runs before the
+        // ffmpeg gate so a resolve regression is not hidden behind the skip.
+        assert_eq!(
+            project.resolve("media/a.mp4"),
+            dir.join("media").join("a.mp4")
+        );
+
+        project.main_layer_mut().unwrap().clips.push(Clip {
+            id: "clip_1".into(),
+            source: "media/a.mp4".into(),
+            src_in: Time::ZERO,
+            src_out: None,
+            speed: 1.0,
+            transform: Transform::Fit,
+            gain_db: 0.0,
+            speed_keys: None,
+            transition: None,
+        });
+        project.tracks.captions = Some(Captions {
+            source: "subs.srt".into(),
+            burn: true,
+        });
+        project.tracks.overlays.push(Overlay::Image(ImageOverlay {
+            id: "logo".into(),
+            source: "logo.png".into(),
+            at: TimeRange::new(Time::ZERO, Time::from_secs_f64(1.0)).unwrap(),
+            anchor: Anchor::Bottom,
+            width: 0.1,
+            opacity: 1.0,
+            margin: 0.0,
+        }));
+
+        let mut media = MediaIndex::default();
+        let diags = project.diagnose(&mut media);
+        let codes: Vec<&str> = diags.iter().map(|d| d.code.as_str()).collect();
+        assert!(
+            !codes.contains(&"media_missing"),
+            "relative clip source should resolve against root: {codes:?}"
+        );
+        assert!(
+            !codes.contains(&"captions_missing"),
+            "relative captions source should resolve against root: {codes:?}"
+        );
+        assert!(
+            !codes.contains(&"overlay_image_missing"),
+            "relative overlay source should resolve against root: {codes:?}"
+        );
+        assert!(
+            project.duration(&mut media).micros() > 0,
+            "duration of a resolved clip should be non-zero"
+        );
+    }
+
+    #[test]
+    fn resolve_without_a_root_returns_the_stored_path_unchanged() {
+        let mut project = Project::new(640, 360, Rational::new(30, 1));
+        assert!(project.root.as_os_str().is_empty());
+        assert_eq!(project.resolve("media/a.mp4"), Path::new("media/a.mp4"));
+        assert_eq!(project.resolve("/abs/media/a.mp4"), Path::new("/abs/media/a.mp4"));
+
+        // A non-empty root still joins even though Store::open would supply it.
+        let other = std::env::temp_dir().join(format!("splice-resolve-other-{}", std::process::id()));
+        project.root = other.clone();
+        assert_eq!(
+            project.resolve("media/a.mp4"),
+            other.join("media").join("a.mp4")
+        );
+        let _ = std::fs::remove_dir_all(&other);
     }
 }
