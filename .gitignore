@@ -16,3 +16,6 @@
 
 # npm packaging output: staged per-platform packages, built from a release binary
 /npm/out
+
+# orchestration scratch
+.orchestrate/
