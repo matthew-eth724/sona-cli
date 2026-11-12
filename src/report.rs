@@ -89,9 +89,51 @@ pub fn default_fix(code: &str) -> Option<String> {
         "ffmpeg_failed" => "splice plan   (shows the argv that failed)",
         "project_invalid" => "splice undo   (restore the last good document)",
         "no_font" => "install a font or fix fontconfig, then splice doctor",
+        "nothing_rendered" => "splice render",
+        "asr_no_key" => "splice config set gemini.api_key --stdin",
+        "asr_over_limit" => "splice transcribe --yes, or --max-duration 20m",
+        "asr_unreadable" => "splice transcribe --provider <other>",
+        "internal" => "splice doctor",
+        "whisper_missing" => "splice config set whisper.program /path/to/whisper-cli",
+        "whisper_model" => "splice config set whisper.model /path/to/ggml-small.bin",
+        "whisper_failed" => "splice config set whisper.program <path>",
         _ => return None,
     };
     Some(fix.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nothing_rendered_maps_to_splice_render_not_undo() {
+        assert_eq!(
+            default_fix("nothing_rendered"),
+            Some("splice render".to_string())
+        );
+        assert_eq!(exit_code("nothing_rendered"), 2);
+        // It must not fall through to `project_invalid` / `splice undo`.
+        assert_ne!(default_fix("nothing_rendered"), default_fix("project_invalid"));
+    }
+
+    #[test]
+    fn asr_and_whisper_codes_carry_a_default_fix() {
+        for code in [
+            "asr_no_key",
+            "asr_over_limit",
+            "asr_unreadable",
+            "internal",
+            "whisper_missing",
+            "whisper_model",
+            "whisper_failed",
+        ] {
+            assert!(
+                default_fix(code).is_some(),
+                "{code} must carry a default_fix so docs and JSON agree"
+            );
+        }
+    }
 }
 
 pub fn exit_code(code: &str) -> i32 {

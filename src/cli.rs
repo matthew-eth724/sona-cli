@@ -1684,9 +1684,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             let plan = graph::plan(&store, &mut media, &PathBuf::from("out.mp4"), profile, None)?;
             let source = plan.last_output().to_path_buf();
             if !source.exists() {
-                bail!(
-                    "nothing rendered yet (run `splice render{}`)",
-                    if preview { " --preview" } else { "" }
+                let cmd = if preview { "splice render --preview" } else { "splice render" };
+                fail(
+                    "nothing_rendered",
+                    format!("nothing rendered yet (run `{cmd}`)"),
+                    Some(cmd.to_string()),
                 );
             }
             // Separate directories, because a proxy still and a final still of

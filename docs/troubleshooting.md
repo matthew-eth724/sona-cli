@@ -52,6 +52,7 @@ created them, and in `inspect`.
 | `clip_empty` | the trim left nothing | the clip is skipped in the render |
 | `captions_missing` | the SRT path is gone | the render fails; re-`caption` |
 | `media_missing` | a source file moved | `list` shows `missing: true` |
+| `nothing_rendered` | no rendered output for this project/profile yet | `splice render` (or `splice render --preview` for the preview profile) |
 | `text_past_end` | an overlay extends past the timeline | the overlay is simply cut short |
 | `place_keys_unused` | placement keys on the bottom layer | reported, not applied: the bottom layer (lowest `z`, normally `z = 0`) is the program frame; add a layer above it and key that, or `splice key <id> --clear` |
 | `layer_start_unused` | `start` on the bottom layer | reported, not applied: the bottom layer plays from 0; start a layer above it, or `splice layer set <id> --start 0` |
