@@ -82,7 +82,7 @@ jobs:
             echo "$name@$version is already published; nothing to do"
             exit 0
           fi
-          if npm publish "$dir" --access public --provenance; then
+          if npm publish "$dir" --access public --provenance --tag next; then
             echo "published $name@$version"
           elif npm view "$name@$version" version >/dev/null 2>&1; then
             echo "$name@$version appeared while publishing; treating as done"
@@ -122,7 +122,7 @@ jobs:
             echo "$name@$version is already published; nothing to do"
             exit 0
           fi
-          if npm publish --access public --provenance; then
+          if npm publish --access public --provenance --tag next; then
             echo "published $name@$version"
           elif npm view "$name@$version" version >/dev/null 2>&1; then
             echo "$name@$version appeared while publishing; treating as done"
