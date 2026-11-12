@@ -103,16 +103,14 @@ one total order and no tie-breaking rule. Version 1's `tracks.video` is now
 | `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions |
 | `motion` | object | omitted | the camera: `keys: [{t, zoom, at}]`, linear between keys |
 | `mask` | object | omitted | `{kind:"chroma", color, similarity, blend}` or `{kind:"vignette", angle}` |
-| `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides the layer's position. `place.size` does not animate |
+| `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides every layer except the one at the bottom of the z order; that bottom layer keeps its position. `place.size` does not animate |
 | `clips` | array | required | sequential inside the layer: version 1's model, unchanged |
 
 The layer at `z: 0` must fill the canvas (`place` of `{0,0,1}`): a base layer with
 a hole is a bug, not a look.
 
-**Multi-layer projects and `motion` do not render yet.** They validate and save,
-and `splice render` refuses with `composite_not_built` rather than producing a
-render that silently ignores the extra layers. The design is
-[design-compositing.md](design-compositing.md).
+Multi-layer projects and `motion` render as one composite step, in `z` order.
+The design is [design-compositing.md](design-compositing.md).
 
 ## layers[].clips
 
@@ -227,7 +225,7 @@ Deleting `.splice/index/` leaves this pointer dangling, and `view`/`find` will s
 
 Hard errors — the file will not load:
 
-- `version` must equal `1`.
+- `version` must be `2` (a `1` on disk is upgraded on open; any other value is refused).
 - `canvas.width` and `canvas.height` must be non-zero.
 - Every clip's `speed` must be > 0.
 - `src_out` must be ≥ `src_in`.

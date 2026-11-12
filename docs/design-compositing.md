@@ -1,7 +1,8 @@
 # Compositing and keyframes — design
 
-Status: **built.** Layers, placement, camera keys, the composite stage and the
-two lowerings all ship; animated placement is the one piece deliberately absent.
+Status: **built.** Layers, placement, camera keys, placement keys, the composite
+stage and the two lowerings all ship in 0.1.2 — placement keys slide every layer
+except the one at the bottom of the z order; that bottom layer stays static.
 
 ## Problem
 
@@ -120,8 +121,9 @@ pub struct Key { pub t: Time, pub zoom: f64, pub at: Point }   // zoom >= 1.0
 
 Three fields do three different jobs and none of them overlaps another: `z` is
 stacking, `start` is when, `place` is where on the canvas, `motion` is where the
-camera looks inside the layer. **Placement is static in v1.** Animating where a
-PiP slides is a follow-up, and it is visibly absent rather than half-present.
+camera looks inside the layer. `place` sets where a layer lands; `place_keys` slides every layer except the
+one at the bottom of the z order over layer time (0.1.2); that bottom layer
+keeps its position.
 
 ```rust
 impl Motion {
@@ -245,9 +247,10 @@ legacy plans byte-identical, disappears.
 
 ### Tradeoffs accepted
 
-- **Placement static in v1** in exchange for one unambiguous place for it. Moving
-  a PiP over time is a real future feature, and half-supporting it now would put
-  position in two representations.
+- **Placement static in v1** — superseded in 0.1.2: `place_keys` carries x/y
+  over layer time on every layer except the bottom of the z order; `place.size`
+  stays the one size and `place.x`/`place.y` apply only when a layer has no
+  place keys; the bottom layer stays static.
 - **One audio source** (z=0) in exchange for not modelling per-layer audio buses.
   A PiP with its own voiceover is a warning and a documented limit, not a silent
   mix.
@@ -285,10 +288,9 @@ legacy plans byte-identical, disappears.
 1. **Does `start` belong on the layer or on its first clip?** On the layer, today.
    If mid-layer gaps ever land, `start` moves onto clips and the layer field
    disappears — one of the two must not exist.
-2. **Animated placement.** Zoom and pan are camera moves inside a layer. Sliding a
-   PiP across the canvas is `place` changing over time, which needs a second
-   animatable field. Is that worth the second representation, or is
-   `place`-per-layer-time-slice enough?
+2. **Animated placement.** Resolved in 0.1.2: `place_keys` slides every layer
+except the bottom of the z order over time; that bottom layer stays static.
+   `place`-per-layer-time-slice was not needed.
 3. **Audio buses.** One source is honest but limiting. `Layer::audio: bool` plus a
    mix step is the obvious next increment; the mix belongs in decorate, not
    composite.
@@ -316,14 +318,10 @@ legacy plans byte-identical, disappears.
   inside, 35 dB outside), and a camera keyed 1.0→2.0 over five seconds measures
   1.0, 1.5 and 2.0 at those times.
 
-## Next implementation step
+## Shipped
 
-Land the document change and its migration **before any compositor code**:
-`Layer`/`Place`/`Motion`/`Key` in `project.rs`, `upgrade()` v1→v2 on open, `z` and
-`motion` validation, `Project::duration` as a max over layers, and `by_z()`.
-Then assert the migration is provable: a v1 project upgrades and produces a plan
-whose argv is **byte-identical** to what it produced before the change. That test
-is the gate; the compositor comes after it passes.
+Document version 2, the compositor and the keys landed in 0.1.2; see
+"Built, and what changed on contact" above.
 
 ## Red-flag screening
 

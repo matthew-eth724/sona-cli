@@ -75,10 +75,6 @@ re-see the cue count.
 which is the clips. If the timeline is shorter than you think, the bed is cut.
 `inspect` reports the real `duration`.
 
-**`composite_not_built`.** The project has more than one layer, or a layer with
-camera keys. Those are designed and not implemented. `splice undo` goes back; the
-document itself is valid, it just cannot be rendered yet.
-
 **`no layer at z = 0`.** A hand edit removed or moved the base layer. The layer at
 z = 0 carries the program audio and must fill the canvas; `splice undo` restores it.
 

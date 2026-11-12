@@ -773,9 +773,9 @@ A constant camera compiles to `crop`+`scale`; a moving one compiles to
 `scale`+`zoompan`. Either way the clip footage is never re-encoded: `plan` shows a
 single `composite` step whose key carries the expressions.
 
-`--place` is a **placement** key, not a camera key: it moves where the layer sits
-on the canvas, in layer-local time, and it compiles to an `overlay` x/y
-expression.
+`--place` is a **placement** key, not a camera key: it moves where a layer above
+the bottom of the z order sits on the canvas, in layer-local time, and it compiles
+to an `overlay` x/y expression; the bottom layer keeps its position.
 
 ```console
 $ splice key pip --t 0   --place 0.05,0.05
@@ -789,21 +789,14 @@ no time variable, and faking a growing layer with a second mechanism would give
 the document two ways to say how big something is. `place.size` stays a single
 value.
 
-## transcribe
+## composite
 
-The document (version 2) already models layers and camera keys, and `splice` will
-refuse to render one rather than ignore it:
+With more than one layer, or a camera, `splice plan` shows one `composite <n> layers`
+step; a single layer with no camera skips it entirely. Program audio comes from `z = 0`.
 
-```console
-$ splice render
-{"error":{"code":"composite_not_built",
- "message":"this project has 2 layers, but compositing is designed and not implemented"}}
-```
-
-Editing commands still target the `main` layer, and clip ids are unique across the
-document, so `trim`, `speed`, `move`, `rm` and `transition` need no layer flag.
-The design, including the commands that will exist, is
-[design-compositing.md](design-compositing.md).
+Clip ids are unique across the document, so `trim`, `speed`, `move`, `rm` and
+`transition` find the clip in any layer and need no layer flag.
+The design is [design-compositing.md](design-compositing.md).
 
 ## config
 

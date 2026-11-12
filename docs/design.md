@@ -445,9 +445,8 @@ exposes an internal stage: `--preview` changes quality, not pipeline shape.
 
 ### What it deliberately does not do
 
-Multi-track video compositing, keyframes, masks, color grading beyond
-`grayworld`/LUT, GPU encoding, streaming, and a GUI. Each would turn the project
-file into a language and the "one diffable document" property dies first.
+GPU encoding, streaming, and a GUI. Each is a second system living beside the
+document rather than inside it.
 
 ## Synthesis decision
 
@@ -626,19 +625,17 @@ Added after the first build, for the clipping workflow:
   envelope, and keep JSON for errors. Measured at 970 bytes against 2,275 for the
   same 30-second range, which is the whole point of the exception.
 
-Designed, not built: multi-track compositing and keyframes, in
-[design-compositing.md](design-compositing.md). The **document half has landed**:
-version 2 with layers, placement and camera keys, a v1 upgrade on open, duration
-as a max over layers, and `composite_not_built` for anything the compositor would
-have to handle. The gate held — three captured v1 plans (final, preview,
-loudnorm) are byte-identical after the change, checked by building the
-pre-change binary from git and driving both against one project. It bumps the document to version 2
-(layers, placement, camera keyframes), and the design's first gate is that a v1
-project must plan byte-identically before any compositor code lands.
+The compositor and the two key kinds (camera and placement) are built and
+shipped in 0.1.2, modelled in [design-compositing.md](design-compositing.md).
+Masks and grade are modelled in [project-file.md](project-file.md) and
+[cli.md](cli.md). Version 2 landed with layers, placement and camera keys, a
+v1 upgrade on open, and duration as a max over layers. The v1 gate held: three captured v1 plans (final, preview, loudnorm)
+planned byte-identically before the compositor code landed, checked by building
+the pre-change binary from git and driving both against one project.
 
-Unimplemented on purpose, still in the plan: ASR adapters (fixtures are
-committed), image overlays, reframe presets beyond Fit/Fill, audio ducking,
-transition/xfade between clips, `--preview` quality tier.
+ASR adapters, image overlays (`splice image`), audio ducking (`splice duck`),
+transition/xfade (`splice transition`) and the `--preview` quality tier shipped
+in 0.1.2. Reframe presets beyond Fit/Fill are the one item still in the plan.
 
 ## Decisions made, with the evidence
 
