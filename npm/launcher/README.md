@@ -39,6 +39,24 @@ The binary is per-platform (Linux x64/arm64, macOS x64/arm64, Windows x64) and
 resolved by npm, so `npm ci --ignore-scripts` works. Linux is statically linked
 and runs on Alpine too.
 
+## The agent skill
+
+The package ships a `splice` skill — the edit loop, the JSON contract, a command
+reference and every error code with its fix — and installs it into the skill
+directories this machine already has: `~/.claude/skills`, `~/.agents/skills`,
+`~/.pi/agent/skills`. Nothing is created in a home directory that has never used
+one of those harnesses, and a failed copy never fails the install.
+
+```console
+$ npm i -g splice-cli          # installs the skill too, where it is welcome
+$ splice-skill                 # or run it yourself
+$ splice-skill --dir ~/my/skills
+$ SPLICE_SKILL=none npm i -g splice-cli   # skip it
+```
+
+Installed with `--ignore-scripts`? Run `npx splice-skill`. The skill asserts
+0.1.4 behaviour, so its `scripts/smoke.sh` refuses to run against an older binary.
+
 Newest work lives under `@next` until it has been run by a person on macOS and
 Windows: `npx splice-cli@next --version`.
 

@@ -111,6 +111,22 @@ jobs:
           tag="${GITHUB_REF_NAME#v}"
           have=$(node -p "require('./npm/launcher/package.json').version")
           [ "$tag" = "$have" ] || { echo "tag $tag != package $have"; exit 1; }
+      - name: bundle the agent skill into the package
+        # npm/launcher/skills is generated, never committed: one source of truth
+        # in .claude/skills/splice, checked by tools/check-skill-mirror.sh.
+        run: node npm/bundle-skill.mjs
+      - name: the tarball must contain the skill
+        run: |
+          set -euo pipefail
+          cd npm/launcher
+          npm pack --dry-run --json > /tmp/pack.json
+          node -e '
+            const files = JSON.parse(require("fs").readFileSync("/tmp/pack.json","utf8"))[0].files.map(f=>f.path);
+            for (const want of ["skills/splice/SKILL.md","skills/splice/references/commands.md","skills/splice/references/errors.md","skills/splice/scripts/smoke.sh","postinstall.mjs","install-skill.mjs"]) {
+              if (!files.includes(want)) { console.error(`missing from the tarball: ${want}`); process.exit(1); }
+            }
+            console.log("skill payload present in the tarball");
+          '
       - name: publish the launcher
         working-directory: npm/launcher
         shell: bash

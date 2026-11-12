@@ -19,3 +19,6 @@
 
 # orchestration scratch
 .orchestrate/
+
+# bundled at publish time from .claude/skills/splice
+/npm/launcher/skills/

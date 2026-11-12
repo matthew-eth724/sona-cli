@@ -194,6 +194,14 @@ when they drift.
   error-code table, and `scripts/smoke.sh`, which proves an install end to end in a
   throwaway directory and refuses to run against a binary older than 0.1.4.
 
+The `splice` skill also ships **inside the npm package** and is installed by the
+launcher's postinstall into whichever of `~/.claude/skills`, `~/.agents/skills` and
+`~/.pi/agent/skills` already exist — never creating one, and never failing an
+install over a copy. `splice-skill` runs the same installer by hand (needed after
+`--ignore-scripts`, and `--dir <path>` puts it elsewhere); `SPLICE_SKILL=none`
+skips it. The package copy is generated at publish time from `.claude/skills/splice`
+by `npm/bundle-skill.mjs`, so the two cannot drift.
+
 ## Status
 
 144 unit tests, and every command above has been driven end to end against real

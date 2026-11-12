@@ -17,10 +17,15 @@
   },
   "homepage": "https://github.com/matthew-eth724/splice-cli#readme",
   "bin": {
-    "splice": "bin/splice.js"
+    "splice": "bin/splice.js",
+    "splice-skill": "bin/splice-skill.js"
   },
   "files": [
     "bin/splice.js",
+    "bin/splice-skill.js",
+    "skills",
+    "install-skill.mjs",
+    "postinstall.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -33,5 +38,8 @@
     "splice-cli-darwin-x64": "0.1.4",
     "splice-cli-darwin-arm64": "0.1.4",
     "splice-cli-windows-x64": "0.1.4"
+  },
+  "scripts": {
+    "postinstall": "node postinstall.mjs"
   }
 }
