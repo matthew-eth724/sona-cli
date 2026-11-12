@@ -600,7 +600,7 @@ This is the debugging lever: if the render is wrong, the argv says why.
 
 ```
 splice render [-o out.mp4] [--preview] [--loudnorm] [--lufs -14] [--true-peak -1]
-            [--lra 11] [--timeout 3600]
+            [--lra 11] [--timeout 3600] [--progress] [--no-progress]
 ```
 
 Executes the plan into `.splice/cache/`, then copies the final step to `-o`.
@@ -650,6 +650,26 @@ trade, and if you need exact integrated numbers you can measure the result with
 
 The loudness pass is orthogonal to `--preview`: a proxy can be loudness-targeted
 too, which is useful for checking a phone speaker mix before the full render.
+
+## render progress
+
+`render` writes one JSON progress object per line to **stderr** — never stdout —
+so a caller watching a pipe can tell a long render from a hung process:
+
+```json
+{"progress":"step","index":1,"total":4,"label":"normalize clip_1","state":"start"}
+{"progress":"ffmpeg","index":1,"total":4,"out_time_us":1500000}
+{"progress":"step","index":1,"total":4,"label":"normalize clip_1","state":"ran","ms":1234}
+```
+
+Step lines (`start`, then `ran`/`reused`) are on by default for every step
+that reaches a result — a failing step emits `start` and then the error JSON,
+with no `ran`/`reused`.
+ffmpeg tick lines (`out_time_us`) are gated: on by default when stderr is a TTY,
+forced with `--progress` or `SPLICE_PROGRESS=verbose`, and silenced by
+`--no-progress` or `SPLICE_PROGRESS=0` (`--no-progress` wins over
+`--progress`; `SPLICE_PROGRESS=0` wins over both). stdout stays exactly one
+JSON object.
 
 ## frames
 

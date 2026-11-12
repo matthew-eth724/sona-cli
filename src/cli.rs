@@ -2,6 +2,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde_json::json;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -382,6 +383,15 @@ enum Cmd {
         out: Option<PathBuf>,
         #[arg(long, default_value = "3600")]
         timeout: u64,
+        /// ffmpeg `out_time_us` tick lines on stderr. Step lines go to stderr
+        /// unless silenced; ticks are on by default on a TTY, forced with this
+        /// flag or `SPLICE_PROGRESS=verbose`, and silenced by
+        /// `--no-progress` or `SPLICE_PROGRESS=0`.
+        #[arg(long)]
+        progress: bool,
+        /// Silence render progress on stderr. Wins over `--progress`.
+        #[arg(long)]
+        no_progress: bool,
         /// Low resolution, low frame rate, own cache. For looking, not shipping.
         #[arg(long)]
         preview: bool,
@@ -515,6 +525,20 @@ pub fn run() -> ! {
         fail_from(e);
     }
     std::process::exit(0);
+}
+
+/// `--progress`/`SPLICE_PROGRESS=verbose` turn ffmpeg tick lines on;
+/// `--no-progress`/`SPLICE_PROGRESS=0` silence everything and win;
+/// otherwise step lines go to stderr and ticks come only on a TTY.
+/// Pure so `src/cli.rs` can test it without touching process env.
+fn progress_for(force: bool, quiet: bool, env: Option<&str>, tty: bool) -> render::Progress {
+    if env == Some("0") || quiet {
+        return render::Progress::silent();
+    }
+    if force || env == Some("verbose") || tty {
+        return render::Progress::watch(true);
+    }
+    render::Progress::watch(false)
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
@@ -1683,7 +1707,17 @@ fn dispatch(cli: Cli) -> Result<()> {
             ok(graph::plan_json(&plan, profile), &plan.warnings);
             Ok(())
         }
-        Cmd::Render { out, timeout, preview, loudnorm, lufs, true_peak, lra } => {
+        Cmd::Render {
+            out,
+            timeout,
+            preview,
+            loudnorm,
+            lufs,
+            true_peak,
+            lra,
+            progress,
+            no_progress,
+        } => {
             let store = Store::open(&path)?;
             let mut media = MediaIndex::default();
             let profile = if preview { graph::Profile::Preview } else { graph::Profile::Final };
@@ -1693,7 +1727,14 @@ fn dispatch(cli: Cli) -> Result<()> {
             let out_path = store.resolve(&target.to_string_lossy());
             let loudness = loudness_arg(loudnorm, lufs, true_peak, lra);
             let plan = graph::plan(&store, &mut media, &out_path, profile, loudness)?;
-            let summary = render::execute(&plan, Duration::from_secs(timeout))?;
+            let env = std::env::var("SPLICE_PROGRESS").ok();
+            let progress = progress_for(
+                progress,
+                no_progress,
+                env.as_deref(),
+                std::io::stderr().is_terminal(),
+            );
+            let summary = render::execute(&plan, Duration::from_secs(timeout), &progress)?;
             let canvas = profile.canvas(&store.project.canvas);
             ok(
                 json!({
@@ -2566,5 +2607,56 @@ mod rm_tests {
         ] {
             assert!(src.contains(needle), "rm lost a case: {needle}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_for_env_zero_is_silent() {
+        let p = progress_for(false, false, Some("0"), false);
+        assert!(!p.steps());
+        assert!(!p.ticks());
+    }
+
+    #[test]
+    fn progress_for_no_progress_wins_over_force() {
+        let p = progress_for(true, true, Some("verbose"), true);
+        assert!(!p.steps());
+        assert!(!p.ticks());
+    }
+
+    #[test]
+    fn progress_for_force_is_ticks() {
+        let p = progress_for(true, false, None, false);
+        assert!(p.steps());
+        assert!(p.ticks());
+    }
+
+    #[test]
+    fn progress_for_env_verbose_is_ticks() {
+        let p = progress_for(false, false, Some("verbose"), false);
+        assert!(p.steps());
+        assert!(p.ticks());
+    }
+
+    #[test]
+    fn progress_for_default_is_steps_without_ticks() {
+        let p = progress_for(false, false, None, false);
+        assert!(p.steps());
+        assert!(!p.ticks());
+    }
+
+    #[test]
+    fn progress_for_default_ticks_on_a_tty() {
+        assert!(progress_for(false, false, None, true).ticks());
+    }
+
+    #[test]
+    fn progress_for_no_progress_silences_even_on_a_tty() {
+        assert!(!progress_for(false, true, None, true).steps());
+        assert!(!progress_for(false, true, None, true).ticks());
     }
 }

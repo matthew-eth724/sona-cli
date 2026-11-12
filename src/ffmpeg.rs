@@ -2,7 +2,7 @@
 use anyhow::{bail, Context, Result};
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -149,6 +149,122 @@ pub fn run(inv: &Invocation, timeout: Duration) -> Result<()> {
             bail!("ffmpeg timed out after {}s", timeout.as_secs());
         }
         std::thread::sleep(Duration::from_millis(40));
+    }
+}
+
+/// Keys ffmpeg emits on stderr that are progress telemetry, not real errors.
+/// They must not displace the actual failure line in the error tail.
+const PROGRESS_KEYS: &[&str] = &[
+    "out_time_us=", "out_time_ms=", "out_time=", "speed=", "progress=",
+    "frame=", "fps=", "bitrate=", "total_size=", "dup_frames=", "drop_frames=",
+    "stream_",
+];
+
+fn is_progress_line(line: &str) -> bool {
+    PROGRESS_KEYS.iter().any(|k| line.starts_with(k))
+}
+
+/// `run`, plus ffmpeg `-progress pipe:2` blocks delivered line-by-line to
+/// `on_line`. The three progress options are appended at spawn time only;
+/// `inv` itself is never mutated, so `plan` output and cache keys are
+/// unchanged. stderr is drained on a thread into a bounded buffer (the last
+/// 200 lines) so a full pipe cannot deadlock the child, and the buffer is the
+/// error tail when a step fails.
+pub fn run_with_progress(
+    inv: &Invocation,
+    timeout: Duration,
+    mut on_line: &mut dyn FnMut(&str),
+) -> Result<()> {
+    let mut args: Vec<OsString> = inv.args[1..].to_vec();
+    args.push("-progress".into());
+    args.push("pipe:2".into());
+    args.push("-nostats".into());
+    let mut child = Command::new(&inv.args[0])
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("ffmpeg not found on PATH")?;
+
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let (tx, rx) = std::sync::mpsc::channel();
+    // The last 200 non-progress lines on stderr, kept for the error tail.
+    let tail = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let tail_thread = tail.clone();
+    let reader = std::thread::spawn(move || {
+        let mut buf = std::io::BufReader::new(stderr);
+        let mut line = String::new();
+        let tail = tail_thread;
+        loop {
+            line.clear();
+            match buf.read_line(&mut line) {
+                Ok(0) => return,
+                Ok(_) => {
+                    let end = line.trim_end().to_string();
+                    if !is_progress_line(&end) {
+                        let mut t = tail.lock().unwrap();
+                        t.push(end.clone());
+                        if t.len() > 200 {
+                            t.remove(0);
+                        }
+                    }
+                    let _ = tx.send(end);
+                }
+                Err(_) => return,
+            }
+        }
+    });
+
+    let start = Instant::now();
+    loop {
+        while let Ok(line) = rx.try_recv() {
+            if line.starts_with("out_time_us=") || line.starts_with("progress=") {
+                on_line(&line);
+            }
+        }
+        if let Some(status) = child.try_wait()? {
+            for line in rx.try_iter() {
+                if line.starts_with("out_time_us=") || line.starts_with("progress=") {
+                    on_line(&line);
+                }
+            }
+            if status.success() {
+                return Ok(());
+            }
+            // The child has exited, so EOF is guaranteed: join the reader
+            // before reading the tail so nothing is missing or truncated.
+            let _ = reader.join();
+            let tail = tail.lock().unwrap();
+            let tail: Vec<&str> = tail
+                .iter()
+                .map(|s| s.as_str())
+                .filter(|l| !l.trim().is_empty())
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            bail!("ffmpeg failed: {}", tail.join(" | "));
+        }
+        if start.elapsed() > timeout {
+            let _ = child.kill();
+            bail!("ffmpeg timed out after {}s", timeout.as_secs());
+        }
+        match rx.recv_timeout(Duration::from_millis(40)) {
+            Ok(line) => {
+                if line.starts_with("out_time_us=") || line.starts_with("progress=") {
+                    on_line(&line);
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                // stderr hit EOF without the child reaped yet: sleep once to
+                // match run's poll interval instead of busy-waiting.
+                std::thread::sleep(Duration::from_millis(40));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+        }
     }
 }
 
@@ -327,5 +443,39 @@ mod tests {
         assert_eq!(got.as_deref(), Some(real.to_str().unwrap()));
         assert!(first_existing(&[missing]).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn progress_keys_filter_all_thirteen_real_ffmpeg_keys() {
+        let real = [
+            "frame=12",
+            "fps=0.0",
+            "stream_0_0_q=-1.0",
+            "stream_0_1_q=-1.0",
+            "bitrate=N/A",
+            "total_size=N/A",
+            "out_time_us=2000000",
+            "out_time_ms=2000000",
+            "out_time=00:00:02.000000",
+            "dup_frames=0",
+            "drop_frames=0",
+            "speed=1.02x",
+            "progress=end",
+        ];
+        for line in real {
+            assert!(is_progress_line(line), "{line} must be treated as progress");
+        }
+    }
+
+    #[test]
+    fn progress_keys_do_not_swallow_real_errors() {
+        let errors = [
+            "Error while opening encoder for output stream #0:0",
+            "Failed to open file 'nonexistent.mp4'",
+            "Invalid argument",
+        ];
+        for err in errors {
+            assert!(!is_progress_line(err), "{err} must not look like progress");
+        }
     }
 }

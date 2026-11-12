@@ -20,8 +20,10 @@ doctor → inspect → edit → render → frames → look
 
 ## Rules
 
-**Read the JSON, never the logs.** stdout is one object. stderr is a repeat of
-the failure, at most three lines. There is nothing else to scrape.
+**Read the JSON, never the logs.** stdout is one object. `render` writes one
+JSON progress object per line to stderr by default (`--no-progress` or
+`SPLICE_PROGRESS=0` silences it); otherwise stderr repeats the failure, at
+most three lines. There is nothing else to scrape.
 
 **Read `warnings[]` on every mutating command.** An over-long trim, an overlay
 past the end, a source without video — all succeed with a warning. A warning

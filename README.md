@@ -137,7 +137,9 @@ Full reference: [docs/cli.md](docs/cli.md).
 **stdout is one JSON object**, for every command except two. `view` and `find`
 print plain text lines — that is what makes them cheap to read (970 bytes against
 2,275 for the same thirty seconds); pass `--json` when a caller needs structure.
-Errors are always JSON.
+`render` writes one JSON progress object per line to stderr by default
+(`--no-progress` silences it); stdout is still exactly one object. Errors are
+always JSON.
 
 **Exit codes** classify the failure for a caller that only sees the code:
 
