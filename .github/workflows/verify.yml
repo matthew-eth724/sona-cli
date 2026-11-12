@@ -1,0 +1,109 @@
+name: verify
+
+# Proves a *built* binary on each OS, not just that the unit tests compile: doctor
+# against that runner's ffmpeg and fonts, a render with text and captions, an
+# awkward filename, a moved project, and (on macOS) a real whisper transcription.
+# publish.yml only runs on tags; this runs on the work.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-x64
+          - os: macos-15
+            name: macos-arm64
+          - os: macos-15-intel
+            name: macos-x64
+          - os: windows-2025
+            name: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install ffmpeg (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: install ffmpeg (macos)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: install ffmpeg (windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
+      - run: cargo build --release
+
+      - name: drive the binary
+        shell: bash
+        run: |
+          SPLICE=$([ "$RUNNER_OS" = "Windows" ] && echo "target/release/splice.exe" || echo "target/release/splice")
+          SPLICE="$SPLICE" node tools/ci/verify.mjs platform
+
+  # whisper rather than a hosted provider: no key, no cost, and it exercises the
+  # same "call a program, parse its JSON, store the paths" seam. macOS because the
+  # runner can synthesise speech with `say`, so nothing has to be committed.
+  transcribe:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: brew install ffmpeg whisper-cpp
+      - name: cache the whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/splice-verify
+          key: whisper-ggml-small.en
+      - name: fetch a model once
+        run: |
+          mkdir -p ~/.cache/splice-verify
+          [ -f ~/.cache/splice-verify/ggml-small.en.bin ] || \
+            curl -fsSL -o ~/.cache/splice-verify/ggml-small.en.bin \
+              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+      - run: cargo build --release
+      - name: transcribe real speech
+        run: |
+          SPLICE=target/release/splice \
+          WHISPER_PROGRAM="$(command -v whisper-cli || command -v whisper-cpp || echo /opt/homebrew/bin/whisper-cli)" \
+          WHISPER_MODEL="$HOME/.cache/splice-verify/ggml-small.en.bin" \
+          node tools/ci/verify.mjs transcribe
+
+  # A hosted provider, only when asked: real TLS, real API shape, real key. Skipped
+  # on every push and PR so a fork cannot spend the secret, and silently skipped when
+  # the secret is absent rather than failing every run of a fork.
+  provider:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: cargo build --release
+      - name: live transcription (needs GEMINI_API_KEY)
+        if: ${{ secrets.GEMINI_API_KEY != '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # The key travels in the environment, never argv and never the project.
+          mkdir -p "$RUNNER_TEMP/cfg"
+          export SPLICE_CONFIG="$RUNNER_TEMP/cfg/config.json"
+          target/release/splice config set gemini.api_key --from-env GEMINI_API_KEY
+          target/release/splice doctor | node -e '
+            const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const g = (d.providers || []).find((p) => p.name === "gemini");
+            if (!g || !g.key_set) { console.error("gemini key not visible to doctor"); process.exit(1); }
+            console.log("doctor sees the gemini key, model " + g.model);
+          '
