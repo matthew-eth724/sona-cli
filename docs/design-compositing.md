@@ -1,7 +1,7 @@
 # Compositing and keyframes — design
 
-Status: **designed, not built.** Deliberately last: it changes the document
-shape, so it should land once nothing else is moving.
+Status: **built.** Layers, placement, camera keys, the composite stage and the
+two lowerings all ship; animated placement is the one piece deliberately absent.
 
 ## Problem
 
@@ -299,7 +299,24 @@ legacy plans byte-identical, disappears.
 5. **Expression length.** A hundred keys is a few kilobytes in one argv. Fine for
    Linux, worth checking on Windows.
 
-### Next implementation step
+### Built, and what changed on contact
+
+- `layer add|set|rm|list` and `key`, plus `add --layer`. Clip ids are unique across
+  the document, so `trim`, `speed`, `move`, `rm` still need no layer flag.
+- The compositor is one step: layer renders in z order, `overlay` chained,
+  `eof_action=pass` so a short layer stops contributing, `enable` as the only
+  visibility mechanism.
+- **The `zoompan` factor was wrong on first write.** Pre-scaling by the maximum
+  zoom and multiplying `z` by it doubled the zoom at every key. Measured with a
+  still frame and a crop sweep: `zoompan`'s `z` *is* the displayed zoom, so the
+  pre-scale only buys resolution. A moving test pattern hid this for a while —
+  every frame differs from every other, so timing offsets dominated the
+  comparison.
+- Verified end to end: a picture-in-picture appears only in its window (5.1 dB
+  inside, 35 dB outside), and a camera keyed 1.0→2.0 over five seconds measures
+  1.0, 1.5 and 2.0 at those times.
+
+## Next implementation step
 
 Land the document change and its migration **before any compositor code**:
 `Layer`/`Place`/`Motion`/`Key` in `project.rs`, `upgrade()` v1→v2 on open, `z` and

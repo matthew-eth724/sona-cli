@@ -285,37 +285,21 @@ impl RenderPlan {
     }
 }
 
-pub fn plan(
+/// Stages 1 and 2a for one layer: normalize every clip, then assemble.
+///
+/// Placement-free on purpose. `z`, `start`, `place` and the camera never reach
+/// this function, so sliding a picture-in-picture cannot re-encode its footage.
+fn plan_layer(
     store: &Store,
     media: &mut MediaIndex,
-    out: &Path,
+    layer: &crate::project::Layer,
+    canvas: &crate::project::Canvas,
     profile: Profile,
-    loudness: Option<Loudness>,
-) -> Result<RenderPlan> {
-    let project = &store.project;
-    // One layer until the compositor lands; anything else is a clear refusal
-    // rather than a render that silently ignores layers.
-    if project.tracks.layers.len() > 1 {
-        bail!(
-            "composite_not_built: this project has {} layers, but compositing is designed and not implemented (docs/design-compositing.md)",
-            project.tracks.layers.len()
-        );
-    }
-    let layer = project
-        .main_layer()
-        .filter(|l| !l.clips.is_empty())
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("project has no clips (run `splice add <file>`)"))?;
-    if layer.motion.is_some() {
-        bail!("composite_not_built: camera keyframes are designed and not implemented (docs/design-compositing.md)");
-    }
-    let mut warnings = Vec::new();
-    let mut steps = Vec::new();
-    let cache_dir = store.cache_dir();
-    std::fs::create_dir_all(&cache_dir)?;
-    let version = crate::ffmpeg::capabilities().version;
-
-    // Stage 1: one normalized segment per clip.
+    version: &str,
+    cache_dir: &Path,
+    steps: &mut Vec<Step>,
+    warnings: &mut Vec<Diagnostic>,
+) -> Result<(String, PathBuf)> {
     let mut segments: Vec<Segment> = Vec::new();
     for clip in &layer.clips {
         let src = store.resolve(&clip.source);
@@ -341,7 +325,7 @@ pub fn plan(
         if !m.has_audio {
             inv.push("-f").push("lavfi").push("-i").push("anullsrc=r=48000:cl=stereo");
         }
-        let vf = video_chain(clip, project, profile);
+        let vf = video_chain(clip, canvas, profile);
         inv.push("-vf").push(vf);
         inv.push("-af").push(audio_chain(clip, m.has_audio));
         inv.push("-map").push("0:v:0");
@@ -350,18 +334,21 @@ pub fn plan(
         } else {
             inv.push("-map").push("1:a:0");
         }
-        profile.normalize_args(&mut inv);
+        inv.push("-c:v").push("libx264").push("-preset").push("veryfast");
+        inv.push("-crf").push("16").push("-pix_fmt").push("yuv420p");
+        inv.push("-c:a").push("aac").push("-b:a").push("192k").push("-ar").push("48000");
         inv.push("-shortest");
         inv.push("-movflags").push("+faststart");
         inv.push("-f").push("mp4");
         let key = cache::hash(&[
             inv.render(),
             cache::stat_token(&src),
-            version.clone(),
+            version.to_string(),
             profile.tag().into(),
         ]);
-        let output = cache::path(&cache_dir, &key, "mp4");
+        let output = cache::path(cache_dir, &key, "mp4");
         inv.push(arg(&output));
+        let step_index = steps.len();
         steps.push(Step {
             label: format!("normalize {}", clip.id),
             key: key.clone(),
@@ -369,39 +356,43 @@ pub fn plan(
             sidecar: None,
             output: output.clone(),
         });
+        let _ = step_index;
         segments.push(Segment {
             key: key.clone(),
             path: output,
             duration: clip.out_duration(m.duration),
-            // The first segment has no predecessor, whatever the document says.
             transition: if segments.is_empty() { None } else { clip.transition.clone() },
         });
     }
-    if steps.is_empty() {
-        bail!("every clip is empty after trimming");
+    if segments.is_empty() {
+        bail!("every clip in layer `{}` is empty after trimming", layer.id);
     }
 
-    // Stage 2a: concatenate.
     let wants_transition = segments.iter().skip(1).any(|s| s.transition.is_some());
-    let (mut base_key, mut base_path) = match segments.len() {
+    let (key, path) = match segments.len() {
         1 => {
-            let s = &steps[0];
-            (s.key.clone(), s.output.clone())
+            let last = steps.last().expect("a normalize step");
+            (last.key.clone(), last.output.clone())
         }
         _ if wants_transition => {
-            // xfade consumes both inputs and runs them together, so this cannot
-            // be the concat demuxer's `-c copy`: it is a real re-encode.
             let clause: Vec<String> = segments
                 .iter()
-                .map(|s| format!("{}|{}|{}", s.key, s.transition.as_ref().map(|t| t.kind.xfade()).unwrap_or("cut"), s.transition.as_ref().map(|t| t.duration.micros()).unwrap_or(0)))
+                .map(|s| {
+                    format!(
+                        "{}|{}|{}",
+                        s.key,
+                        s.transition.as_ref().map(|t| t.kind.xfade()).unwrap_or("cut"),
+                        s.transition.as_ref().map(|t| t.duration.micros()).unwrap_or(0)
+                    )
+                })
                 .collect();
             let key = cache::hash(&[
                 clause.join(","),
                 "xfade".into(),
-                version.clone(),
+                version.to_string(),
                 profile.tag().into(),
             ]);
-            let output = cache::path(&cache_dir, &key, "mp4");
+            let output = cache::path(cache_dir, &key, "mp4");
             let mut inv = Invocation::new();
             for seg in &segments {
                 inv.input(&seg.path);
@@ -414,6 +405,7 @@ pub fn plan(
             profile.audio_args(&mut inv);
             inv.push("-movflags").push("+faststart");
             inv.push(arg(&output));
+            let _ = PENDING.with(|_| ());
             steps.push(Step {
                 label: format!("crossfade {} segments", segments.len()),
                 key: key.clone(),
@@ -424,15 +416,24 @@ pub fn plan(
             (key, output)
         }
         _ => {
-            let keys: Vec<String> = steps.iter().map(|s| s.key.clone()).collect();
+            let keys: Vec<String> = steps
+                .iter()
+                .filter(|s| s.label.starts_with("normalize"))
+                .rev()
+                .take(segments.len())
+                .map(|s| s.key.clone())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
             let key = cache::hash(&[
                 keys.join(","),
                 "concat".into(),
-                version.clone(),
+                version.to_string(),
                 profile.tag().into(),
             ]);
-            let list_path = cache::path(&cache_dir, &key, "txt");
-            let output = cache::path(&cache_dir, &key, "mp4");
+            let list_path = cache::path(cache_dir, &key, "txt");
+            let output = cache::path(cache_dir, &key, "mp4");
             let mut body = String::new();
             for seg in &segments {
                 body.push_str(&concat_line(&seg.path));
@@ -447,15 +448,160 @@ pub fn plan(
                 label: format!("concat {} segments", segments.len()),
                 key: key.clone(),
                 invocation: inv,
-                sidecar: Some(Sidecar {
-                    path: list_path,
-                    body,
-                }),
+                sidecar: Some(Sidecar { path: list_path, body }),
                 output: output.clone(),
             });
             (key, output)
         }
     };
+    Ok((key, path))
+}
+
+thread_local! { static PENDING: () = const { () }; }
+
+/// The composite stage: stack the layer renders in z order.
+///
+/// One chain node per layer, because ffmpeg's `overlay` takes exactly two inputs
+/// and cannot be chained inside one filter string. `eof_action=pass` lets a short
+/// layer stop contributing without tpad, and `enable` is the only visibility
+/// mechanism — a picture-in-picture at 4 s is a time window, not a transparent
+/// pixel.
+fn composite_graph(
+    layers: &[(String, Time, Time)],  // (input label id, start, duration)
+    canvas: (u32, u32),
+    fps: crate::time::Rational,
+    plan: &crate::project::Project,
+    audio_input: usize,
+) -> Result<String> {
+    let mut chains: Vec<String> = Vec::new();
+    let mut last = String::new();
+    for (i, (id, start, duration)) in layers.iter().enumerate() {
+        let layer = plan.layer(id).expect("layer exists");
+        let mut chain: Vec<String> = Vec::new();
+        if start.micros() != 0 {
+            chain.push(format!("setpts=PTS+{:.6}/TB", start.secs_f64()));
+        }
+        if let Some(m) = &layer.motion {
+            let l = crate::motion::lowering(m);
+            if let Some(c) = crate::motion::static_chain(&l, canvas) {
+                chain.push(c);
+            } else if let Some(c) = crate::motion::animated_chain(&l, canvas, fps) {
+                chain.push(c);
+            }
+        }
+        let place = crate::motion::place_px(layer.place.x, layer.place.y, layer.place.size, canvas);
+        let label = format!("l{i}");
+        if i == 0 {
+            let end = Time::from_micros(start.micros() + duration.micros());
+            let base = if chain.is_empty() {
+                format!("[0:v]null[{label}]")
+            } else {
+                format!("[0:v]{}[{label}]", chain.join(","))
+            };
+            chains.push(base);
+            last = label;
+            let _ = end;
+        } else {
+            if let Some((_, _, side)) = place {
+                chain.push(format!("scale={side}:{side}:flags=lanczos,format=rgba"));
+            }
+            chains.push(format!("[{i}:v]{}[o{i}]", chain.join(",")));
+            let (x, y) = match place {
+                Some((x, y, _)) => (x.to_string(), y.to_string()),
+                None => ("0".to_string(), "0".to_string()),
+            };
+            let end = Time::from_micros(start.micros() + duration.micros());
+            let window = crate::motion::enable_expr(*start, end);
+            chains.push(format!(
+                "[{last}][o{i}]overlay=x={x}:y={y}:eof_action=pass:enable='{window}'[l{i}]"
+            ));
+            last = format!("l{i}");
+        }
+    }
+    chains.push(format!("[{last}]null[v]"));
+    chains.push(format!("[{audio_input}:a]anull[a]"));
+    Ok(chains.join(";"))
+}
+
+pub fn plan(
+    store: &Store,
+    media: &mut MediaIndex,
+    out: &Path,
+    profile: Profile,
+    loudness: Option<Loudness>,
+) -> Result<RenderPlan> {
+    let project = &store.project;
+    let mut warnings: Vec<Diagnostic> = Vec::new();
+    let mut steps: Vec<Step> = Vec::new();
+    let cache_dir = store.cache_dir();
+    std::fs::create_dir_all(&cache_dir)?;
+    let version = crate::ffmpeg::capabilities().version;
+    let (canvas_w, canvas_h) = profile.canvas(&project.canvas);
+
+    // Stages 1 and 2a, once per layer, bottom to top.
+    let ordered: Vec<crate::project::Layer> = project.by_z().into_iter().cloned().collect();
+    if ordered.is_empty() {
+        bail!("project has no layers");
+    }
+    let mut renders: Vec<(String, String, PathBuf, Time, Time)> = Vec::new();
+    for layer in &ordered {
+        let (key, path) = plan_layer(
+            store, media, layer, &project.canvas, profile, &version, &cache_dir,
+            &mut steps, &mut warnings,
+        )?;
+        let duration = project
+            .duration_of_layer(media, layer);
+        renders.push((layer.id.clone(), key, path, layer.start, duration));
+    }
+
+    // Stage 2b: composite, only when there is more than one layer or a camera.
+    let needs_composite = renders.len() > 1 || ordered.iter().any(|l| {
+        l.motion.as_ref().map(|m| crate::motion::lowering(m) != crate::motion::Lowering::None).unwrap_or(false)
+    });
+    let mut base_key = renders.last().expect("a layer").1.clone();
+    let mut base_path = renders.last().expect("a layer").2.clone();
+    let mut audio_input = 0usize;
+    if needs_composite {
+        let mut inv = Invocation::new();
+        for (_, _, path, _, _) in &renders {
+            inv.input(path);
+        }
+        // Program audio comes from the layer at z = 0, whatever its stacking.
+        audio_input = ordered
+            .iter()
+            .position(|l| l.z == 0)
+            .unwrap_or(0);
+        let meta: Vec<(String, Time, Time)> = renders
+            .iter()
+            .map(|(id, _, _, start, dur)| (id.clone(), *start, *dur))
+            .collect();
+        let graph = composite_graph(&meta, (canvas_w, canvas_h), profile.fps(project.canvas.fps), project, audio_input)?;
+        inv.push("-filter_complex").push(graph);
+        inv.push("-map").push("[v]");
+        inv.push("-map").push("[a]");
+        profile.video_args(&mut inv);
+        profile.audio_args(&mut inv);
+        inv.push("-movflags").push("+faststart");
+        let mut key_parts: Vec<String> = renders.iter().map(|(_, k, _, _, _)| k.clone()).collect();
+        key_parts.push("composite".into());
+        key_parts.push(version.clone());
+        key_parts.push(profile.tag().into());
+        key_parts.push(inv.render());
+        let key = cache::hash(&key_parts);
+        let output = cache::path(&cache_dir, &key, "mp4");
+        inv.push(arg(&output));
+        steps.push(Step {
+            label: format!("composite {} layers", renders.len()),
+            key: key.clone(),
+            invocation: inv,
+            sidecar: None,
+            output: output.clone(),
+        });
+        base_key = key;
+        base_path = output;
+    }
+    let _ = audio_input;
+
 
     // Stage 2b: captions, text, music. Only when there is something to burn.
     let has_text = project
@@ -601,8 +747,8 @@ fn fmt_secs(t: Time) -> String {
     format!("{:.6}", t.secs_f64())
 }
 
-fn video_chain(clip: &Clip, project: &Project, profile: Profile) -> String {
-    let (w, h) = profile.canvas(&project.canvas);
+fn video_chain(clip: &Clip, canvas: &crate::project::Canvas, profile: Profile) -> String {
+    let (w, h) = profile.canvas(canvas);
     let mut parts = vec![match clip.transform {
         Transform::Fit => format!(
             "scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
@@ -619,7 +765,7 @@ fn video_chain(clip: &Clip, project: &Project, profile: Profile) -> String {
     if (clip.speed - 1.0).abs() > f64::EPSILON {
         parts.push(format!("setpts=PTS/{:.6}", clip.speed));
     }
-    let fps = profile.fps(project.canvas.fps);
+    let fps = profile.fps(canvas.fps);
     parts.push(format!("fps={}/{}", fps.num, fps.den));
     parts.join(",")
 }
@@ -879,13 +1025,13 @@ mod tests {
             gain_db: 0.0,
             transition: None,
         };
-        let chain = video_chain(&clip, &project, Profile::Final);
+        let chain = video_chain(&clip, &project.canvas, Profile::Final);
         let setpts = chain.find("setpts").expect("setpts in chain");
         let fps = chain.find("fps=").expect("fps in chain");
         assert!(setpts < fps, "setpts must come first: {chain}");
 
         clip.speed = 1.0;
-        let still = video_chain(&clip, &project, Profile::Final);
+        let still = video_chain(&clip, &project.canvas, Profile::Final);
         assert!(!still.contains("setpts"), "no retime at 1x: {still}");
         assert!(still.contains("fps=30/1"));
     }

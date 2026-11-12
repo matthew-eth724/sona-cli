@@ -12,6 +12,9 @@ $ splice find "ship faster"            # 04:12.0-04:15.4  w118-w126  … [ship f
 $ splice add podcast.mp4 --words w118-w126
 $ splice cut clip_1 --fillers --silences '>0.6s'   # drop the ums and the dead air
 $ splice duck --db -18                              # lower the bed under speech
+$ splice layer add pip --z 10 --place 0.62,0.62,0.3 --start 4s   # picture-in-picture
+$ splice key main --t 0 --zoom 1.0 --at 0.5,0.5                   # slow push-in
+$ splice key main --t 8s --zoom 1.8 --at 0.5,0.45
 $ splice text "Ship faster" --from 0.5 --to 4 --pos bottom
 $ splice caption subs.srt
 $ splice render --preview                # cheap proxy, own cache
@@ -108,6 +111,7 @@ required encoder, rather than letting you find out at render time.
 | --- | --- |
 | setup | `init` `doctor` |
 | timeline | `add` `list` `trim` `speed` `move` `rm` `inspect` |
+| layers | `layer` `key` |
 | picture | `text` `image` `transition` |
 | sound | `audio` `duck` `caption` |
 | read | `transcribe` `index` `view` `find` `scenes` |

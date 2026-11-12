@@ -23,6 +23,42 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
+enum LayerCmd {
+    /// Create a layer. `--place x,y,size` in canvas fractions.
+    Add {
+        id: String,
+        #[arg(long)]
+        z: i32,
+        #[arg(long)]
+        place: Option<String>,
+        #[arg(long)]
+        start: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Change a layer's stacking, placement or start.
+    Set {
+        id: String,
+        #[arg(long)]
+        z: Option<i32>,
+        #[arg(long)]
+        place: Option<String>,
+        #[arg(long)]
+        start: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Remove a layer and its clips.
+    Rm {
+        id: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Every layer with its order, start and placement.
+    List,
+}
+
+#[derive(Subcommand)]
 enum ConfigCmd {
     /// Set a field: `gemini.api_key`, `gemini.model`, `deepgram.model`, ...
     Set {
@@ -70,6 +106,9 @@ enum Cmd {
         /// Crop to fill the canvas instead of padding to fit.
         #[arg(long)]
         fill: bool,
+        /// Which layer to add to. Defaults to the one at z = 0.
+        #[arg(long)]
+        layer: Option<String>,
         /// Cut by word ids from the index: `w12` or `w12-w19`.
         #[arg(long)]
         words: Option<String>,
@@ -362,6 +401,36 @@ enum Cmd {
         #[command(subcommand)]
         action: ConfigCmd,
     },
+    /// Add, change or remove a video layer.
+    Layer {
+        #[command(subcommand)]
+        action: LayerCmd,
+    },
+    /// Set a camera keyframe on a layer: zoom and where it looks.
+    Key {
+        /// The layer id.
+        layer: String,
+        /// Where in the layer this key sits, e.g. `4s`.
+        #[arg(long)]
+        t: Option<String>,
+        /// 1.0 shows the whole layer; 2.0 is twice as close.
+        #[arg(long)]
+        zoom: Option<f64>,
+        /// Camera centre as `x,y` in 0..1 of the layer.
+        #[arg(long)]
+        at: Option<String>,
+        /// Show the keys instead of setting one.
+        #[arg(long)]
+        list: bool,
+        /// Remove the key at this time.
+        #[arg(long)]
+        rm: Option<String>,
+        /// Remove every key.
+        #[arg(long)]
+        clear: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// List the snapshots taken before each mutation, newest first.
     History {
         #[arg(long, default_value = "20")]
@@ -400,7 +469,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
-        Cmd::Add { files, from, to, speed, at, fill, words, pad, dry_run } => {
+        Cmd::Add { files, from, to, speed, at, fill, layer, words, pad, dry_run } => {
             if files.is_empty() {
                 bail!("usage: splice add <file>...");
             }
@@ -423,9 +492,13 @@ fn dispatch(cli: Cli) -> Result<()> {
                     bail!("--to must be after --from");
                 }
             }
+            let target = layer.unwrap_or_else(|| "main".to_string());
+            if store.project.layer(&target).is_none() {
+                bail!("usage: no layer {target}; `splice layer add {target} --z 1` first");
+            }
             let main_len = store
                 .project
-                .main_layer()
+                .layer(&target)
                 .map(|l| l.clips.len())
                 .unwrap_or(0);
             let insert_at = at.unwrap_or(main_len);
@@ -467,8 +540,8 @@ fn dispatch(cli: Cli) -> Result<()> {
                     gain_db: 0.0,
                 };
                 let dur = clip.out_duration(m.duration);
-                if let Some(layer) = store.project.main_layer_mut() {
-                    layer.clips.insert(insert_at + offset, clip);
+                if let Some(l) = store.project.layer_mut(&target) {
+                    l.clips.insert(insert_at + offset, clip);
                 }
                 added.push(json!({
                     "id": id,
@@ -1562,6 +1635,147 @@ fn dispatch(cli: Cli) -> Result<()> {
             );
             Ok(())
         }
+        Cmd::Layer { action } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            match action {
+                LayerCmd::Add { id, z, place, start, dry_run } => {
+                    if !dry_run {
+                        crate::history::record(&store, "layer add")?;
+                    }
+                    if store.project.layer(&id).is_some() {
+                        bail!("usage: a layer called {id} already exists");
+                    }
+                    let place = match place {
+                        Some(p) => parse_place(&p)?,
+                        None => crate::project::Place::CANVAS,
+                    };
+                    let start = start.map(|s| Time::parse(&s)).transpose()?.unwrap_or(Time::ZERO);
+                    store.project.tracks.layers.push(crate::project::Layer {
+                        id: id.clone(),
+                        z,
+                        start,
+                        place,
+                        motion: None,
+                        clips: Vec::new(),
+                    });
+                    finish(&mut store, &mut media, dry_run, json!({"added": id, "z": z}))?;
+                }
+                LayerCmd::Set { id, z, place, start, dry_run } => {
+                    if !dry_run {
+                        crate::history::record(&store, "layer set")?;
+                    }
+                    let start_t = start.map(|s| Time::parse(&s)).transpose()?;
+                    let p = place.map(|p| parse_place(&p)).transpose()?;
+                    let layer = store
+                        .project
+                        .layer_mut(&id)
+                        .with_context(|| format!("usage: no layer {id}"))?;
+                    if let Some(z) = z {
+                        layer.z = z;
+                    }
+                    if let Some(p) = p {
+                        layer.place = p;
+                    }
+                    if let Some(s) = start_t {
+                        layer.start = s;
+                    }
+                    finish(&mut store, &mut media, dry_run, json!({"changed": [id]}))?;
+                }
+                LayerCmd::Rm { id, dry_run } => {
+                    if id == "main" {
+                        bail!("usage: `main` is the layer at z = 0 and carries the program audio; set another layer to z = 0 first");
+                    }
+                    if !dry_run {
+                        crate::history::record(&store, "layer rm")?;
+                    }
+                    let before = store.project.tracks.layers.len();
+                    store.project.tracks.layers.retain(|l| l.id != id);
+                    if store.project.tracks.layers.len() == before {
+                        bail!("usage: no layer {id}");
+                    }
+                    finish(&mut store, &mut media, dry_run, json!({"removed": id}))?;
+                }
+                LayerCmd::List => {
+                    let layers: Vec<serde_json::Value> = store
+                        .project
+                        .by_z()
+                        .into_iter()
+                        .map(|l| {
+                            json!({
+                                "id": l.id, "z": l.z,
+                                "start": l.start.to_string(),
+                                "place": {"x": l.place.x, "y": l.place.y, "size": l.place.size},
+                                "clips": l.clips.len(),
+                                "keys": l.motion.as_ref().map(|m| m.keys.len()).unwrap_or(0),
+                            })
+                        })
+                        .collect();
+                    let duration = store.project.duration(&mut media);
+                    ok(json!({"layers": layers, "duration": duration.to_string()}), &[])
+                }
+            }
+            Ok(())
+        }
+        Cmd::Key { layer, t, zoom, at, list, rm, clear, dry_run } => {
+            let mut store = Store::open(&path)?;
+            let mut media = MediaIndex::default();
+            if !dry_run && !list {
+                crate::history::record(&store, "key")?;
+            }
+            let at_point = at.as_deref().map(parse_point).transpose()?;
+            let layer_ref = store
+                .project
+                .layer_mut(&layer)
+                .with_context(|| format!("usage: no layer {layer}"))?;
+            if clear {
+                layer_ref.motion = None;
+                return finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": 0}));
+            }
+            if let Some(raw) = rm {
+                let t = Time::parse(&raw)?;
+                if let Some(m) = layer_ref.motion.as_mut() {
+                    m.keys.retain(|k| k.t != t);
+                    if m.keys.is_empty() {
+                        layer_ref.motion = None;
+                    }
+                }
+                let keys = layer_ref.motion.as_ref().map(|m| m.keys.len()).unwrap_or(0);
+                return finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": keys}));
+            }
+            if list {
+                let keys: Vec<serde_json::Value> = layer_ref
+                    .motion
+                    .as_ref()
+                    .map(|m| {
+                        m.keys
+                            .iter()
+                            .map(|k| json!({"t": k.t.to_string(), "zoom": k.zoom, "at": {"x": k.at.x, "y": k.at.y}}))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ok(json!({"layer": layer, "keys": keys}), &[]);
+                return Ok(());
+            }
+            let t = t
+                .as_deref()
+                .map(Time::parse)
+                .transpose()?
+                .context("usage: --t <time> is required to set a key")?;
+            let zoom = zoom.unwrap_or(1.0);
+            if zoom < 1.0 {
+                bail!("usage: --zoom must be at least 1.0 (1.0 shows the whole layer)");
+            }
+            let point = at_point.unwrap_or(crate::project::Point { x: 0.5, y: 0.5 });
+            let m = layer_ref
+                .motion
+                .get_or_insert_with(|| crate::project::Motion { keys: Vec::new() });
+            m.keys.retain(|k| k.t != t);
+            m.keys.push(crate::project::Key { t, zoom, at: point });
+            m.keys.sort_by_key(|k| k.t.micros());
+            let keys = m.keys.len();
+            finish(&mut store, &mut media, dry_run, json!({"changed": [layer], "keys": keys, "t": t.to_string()}))
+        }
         Cmd::Config { action } => {
             use crate::config::{self, Provider, Secret};
             let mut cfg = config::load()?;
@@ -1947,6 +2161,35 @@ fn detect_cuts(source: &std::path::Path, threshold: f64) -> Result<Vec<Time>> {
         }
     }
     Ok(cuts)
+}
+
+/// `x,y,size` in canvas fractions.
+fn parse_place(raw: &str) -> Result<crate::project::Place> {
+    let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
+    if parts.len() != 3 {
+        bail!("usage: --place x,y,size, e.g. --place 0.72,0.72,0.25");
+    }
+    let x: f32 = parts[0].parse().context("--place x")?;
+    let y: f32 = parts[1].parse().context("--place y")?;
+    let size: f32 = parts[2].parse().context("--place size")?;
+    if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) || size <= 0.0 || size > 1.0 {
+        bail!("usage: --place takes fractions in 0..1, with a size above 0");
+    }
+    Ok(crate::project::Place { x, y, size })
+}
+
+/// `x,y` in canvas fractions.
+fn parse_point(raw: &str) -> Result<crate::project::Point> {
+    let parts: Vec<&str> = raw.split(',').map(str::trim).collect();
+    if parts.len() != 2 {
+        bail!("usage: --at x,y, e.g. --at 0.5,0.5");
+    }
+    let x: f32 = parts[0].parse().context("--at x")?;
+    let y: f32 = parts[1].parse().context("--at y")?;
+    if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
+        bail!("usage: --at takes fractions in 0..1");
+    }
+    Ok(crate::project::Point { x, y })
 }
 
 fn split_config_key(raw: &str) -> Result<(crate::config::Provider, &'static str)> {

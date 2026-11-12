@@ -13,6 +13,7 @@ proves it works. Drive the real command; never assert on an internal function.
 | [review-frames](review-frames.md) | `frames` | PNG files exist at the requested times, sheet tiled |
 | [index](index.md) | `index` `view` `find` | word count matches the transcript, ids are `w1..wN`, second index is `cached: true` |
 | [cut](cut.md) | `cut` | `saved` equals the removed spans, timeline splits into surviving spans, render length matches |
+| [compositing](compositing.md) | `layer` `key` | PiP differs inside its window (5 dB) and matches outside (35 dB); camera measures 1.0/1.5/2.0 |
 | [transitions](transitions.md) | `transition` | 3x3s clips report 7.8s, offsets 2.4/4.8, a sampled blend colour |
 | [scenes](scenes.md) | `scenes` | three cuts in a three-shot clip, a 0.2s flash merged at the default `--min` |
 | [transcribe](transcribe.md) | `transcribe` | dry run names the endpoint; no key gives `asr_no_key`; a live run caches |

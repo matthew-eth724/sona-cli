@@ -11,6 +11,7 @@ mod graph;
 mod history;
 mod index;
 mod media;
+mod motion;
 mod paths;
 mod project;
 mod render;

@@ -153,6 +153,20 @@ splice view --range 12:30-12:50
 words are. Use both before deciding a window: a good quote that lands mid-shot is
 a worse clip than an okay quote at a shot boundary.
 
+## Two pictures at once
+
+```bash
+splice layer add pip --z 10 --place 0.6,0.6,0.3 --start 4s
+splice add demo.mp4 --layer pip        # --layer is only needed on `add`;
+splice rm clip_9                       # clip ids are unique across the document
+splice key main --t 0 --zoom 1.0 --at 0.5,0.5
+splice key main --t 8s --zoom 1.8 --at 0.5,0.45
+```
+
+Moving the camera costs one step: `composite`. The clip renders are unchanged, so
+a camera tweak does not re-encode footage. Placement is static — a sliding PiP is
+not expressible yet, and the tool will not pretend otherwise.
+
 ## When you break it
 
 Every mutation snapshots the document first:

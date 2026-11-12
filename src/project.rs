@@ -110,7 +110,7 @@ pub struct Motion {
     pub keys: Vec<Key>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Key {
     pub t: Time,
     pub zoom: f64,
@@ -456,6 +456,24 @@ impl Project {
         longest
     }
 
+    /// How long one layer runs, after trims, speed and transitions.
+    pub fn duration_of_layer(&self, media: &mut MediaIndex, layer: &Layer) -> Time {
+        let mut total = 0i64;
+        for (i, c) in layer.clips.iter().enumerate() {
+            let d = match media.get(Path::new(&c.source)) {
+                Ok(m) => c.out_duration(m.duration),
+                Err(_) => c.out_duration_known().unwrap_or(Time::ZERO),
+            };
+            total += d.micros();
+            if i > 0 {
+                if let Some(t) = &c.transition {
+                    total -= t.duration.micros();
+                }
+            }
+        }
+        Time::from_micros(total.max(0))
+    }
+
     /// The one sorted view of the layers. Nothing else may sort them.
     pub fn by_z(&self) -> Vec<&Layer> {
         let mut v: Vec<&Layer> = self.tracks.layers.iter().collect();
@@ -669,6 +687,39 @@ impl Project {
                 }
             }
             prev_len = len;
+            }
+        }
+        for l in &self.tracks.layers {
+            if l.z == 0 {
+                continue;
+            }
+            if l.place.x + l.place.size > 1.0001 {
+                out.push(
+                    Diagnostic::new(
+                        "place_off_canvas",
+                        format!("tracks.layers[{}].place", l.id),
+                        format!("layer {} runs past the right edge", l.id),
+                    )
+                    .with_fix(format!(
+                        "splice layer set {} --place 0.6,{},{}",
+                        l.id, l.place.y, l.place.size
+                    )),
+                );
+            }
+            // Only the layer at z = 0 is heard. Say so, rather than dropping an
+            // overlay layer's audio in silence.
+            if l.clips
+                .iter()
+                .any(|c| media.get(Path::new(&c.source)).map(|m| m.has_audio).unwrap_or(false))
+            {
+                out.push(
+                    Diagnostic::new(
+                        "layer_audio_dropped",
+                        format!("tracks.layers[{}]", l.id),
+                        format!("layer {} has audio, and only the layer at z = 0 is heard", l.id),
+                    )
+                    .with_fix("move those clips to the main layer, or accept the silence"),
+                );
             }
         }
         let placed = self.duration(media);

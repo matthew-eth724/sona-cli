@@ -21,6 +21,8 @@ $ splice doctor
 | `usage` | 5 | bad flags, unknown clip id, `--to` before `--from` | `splice <cmd> --help` |
 | `usage: no clip` | 5 | the id is not in the timeline | `splice list` |
 | `config_loose_perms` | — (warning) | the config file is readable by other users | `chmod 600 <path>`, shown in the fix |
+| `layer_audio_dropped` | — (warning) | an overlay layer has audio, which is not heard | move those clips to `main` |
+| `place_off_canvas` | — (warning) | a layer's placement runs past the right edge | `splice layer set <id> --place 0.6,y,size` |
 | `asr_no_key` | 2 | no provider has a key | `splice config set gemini.api_key --stdin` (or deepgram) |
 | `asr_key_invalid` | 2 | the provider rejected the key | check `splice config list`: an env var may be overriding the file |
 | `asr_rate_limited` | 2 | 429 from the provider | wait, or use the other provider |

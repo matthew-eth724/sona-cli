@@ -642,7 +642,59 @@ never overwrite the other.
 Stills are never upscaled: a proxy still comes out at proxy size, which is both
 honest and cheaper to read.
 
-## layers and cameras
+## layer
+
+```
+splice layer add <id> --z <n> [--place x,y,size] [--start <t>] [--dry-run]
+splice layer set <id> [--z <n>] [--place x,y,size] [--start <t>] [--dry-run]
+splice layer rm <id> [--dry-run]
+splice layer list
+```
+
+A layer is one simultaneous picture. `z` is the stacking order and must be
+unique; the layer at `z = 0` carries the program audio and must fill the canvas.
+`--place x,y,size` is the rectangle it occupies, in canvas fractions. `--start`
+is where its t=0 sits on the program clock.
+
+```console
+$ splice layer add pip --z 10 --place 0.6,0.6,0.3 --start 1s
+$ splice add demo.mp4 --layer pip
+{"added":[{"id":"clip_2","duration":"00:00:03.000"}],"duration":"00:00:06.000"}
+
+$ splice layer list
+{"layers":[{"id":"main","z":0,"clips":1,"keys":0,"place":{"x":0,"y":0,"size":1}},
+           {"id":"pip","z":10,"clips":1,"keys":0,"place":{"x":0.6,"y":0.6,"size":0.3}}],
+ "duration":"00:00:06.000"}
+```
+
+Program duration becomes **the longest layer**, not the sum: layers play at the
+same time.
+
+## key
+
+```
+splice key <layer> --t <time> --zoom <n> --at x,y [--dry-run]
+splice key <layer> --list
+splice key <layer> --rm <time> | --clear
+```
+
+Camera waypoints. `zoom` is 1.0 for the whole layer and 2.0 for twice as close;
+`--at` is the centre of the view in layer fractions. Keys interpolate linearly
+and hold flat outside their range.
+
+```console
+$ splice key main --t 0  --zoom 1.0 --at 0.5,0.5
+$ splice key main --t 2.5s --zoom 1.6 --at 0.55,0.48
+$ splice key main --t 5s  --zoom 2.0 --at 0.5,0.35
+$ splice key main --list
+{"keys":[{"t":"00:00:00.000","zoom":1.0,"at":{"x":0.5,"y":0.5}}, …]}
+```
+
+A constant camera compiles to `crop`+`scale`; a moving one compiles to
+`scale`+`zoompan`. Either way the clip footage is never re-encoded: `plan` shows a
+single `composite` step whose key carries the expressions.
+
+## transcribe
 
 The document (version 2) already models layers and camera keys, and `splice` will
 refuse to render one rather than ignore it:
