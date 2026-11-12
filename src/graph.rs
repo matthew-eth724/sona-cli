@@ -522,7 +522,17 @@ fn composite_graph(
             if let Some((_, _, side)) = place {
                 chain.push(format!("scale={side}:{side}:flags=lanczos,format=rgba"));
             }
-            chains.push(format!("[{i}:v]{}[o{i}]", chain.join(",")));
+            // An upper layer that needs no work still needs one node: ffmpeg's
+            // `overlay` takes exactly two inputs and every input needs its
+            // `[o{i}]` label, so an empty chain must serialize as `null`, not
+            // as a dangling `[{i}:v][o{i}]` with no filter at all. The base
+            // branch (`i == 0`) states the same rule; this one follows it.
+            let node = if chain.is_empty() {
+                "null".to_string()
+            } else {
+                chain.join(",")
+            };
+            chains.push(format!("[{i}:v]{node}[o{i}]"));
             let (x, y) = match place {
                 Some((x, y, _)) => (x.to_string(), y.to_string()),
                 None => ("0".to_string(), "0".to_string()),
@@ -1010,7 +1020,7 @@ pub fn plan_json(plan: &RenderPlan, profile: Profile) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project::Canvas;
+    use crate::project::{Canvas, Layer, Mask, Place};
     use crate::time::Rational;
 
     fn canvas(w: u32, h: u32, fps: Rational) -> Canvas {
@@ -1115,6 +1125,106 @@ mod tests {
     fn concat_lines_are_absolute_and_escaped() {
         let line = concat_line(Path::new("/tmp/a b/it's.mp4"));
         assert_eq!(line, "file '/tmp/a b/it'\\''s.mp4'");
+    }
+
+    fn two_layer_project() -> Project {
+        let mut project = Project::new(640, 360, Rational::new(30, 1));
+        project.tracks.layers.push(Layer {
+            id: "pip".into(),
+            z: 10,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            place_keys: None,
+            mask: None,
+            clips: Vec::new(),
+        });
+        project
+    }
+
+    fn composite_meta(project: &Project) -> Vec<(String, Time, Time)> {
+        project
+            .by_z()
+            .into_iter()
+            .cloned()
+            .map(|layer| (layer.id.clone(), layer.start, Time::from_secs_f64(6.0)))
+            .collect()
+    }
+
+    #[test]
+    fn an_upper_layer_with_no_work_gets_null_not_a_dangling_label() {
+        let project = two_layer_project();
+        let graph = composite_graph(
+            &composite_meta(&project),
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(graph.contains("[1:v]null[o1]"), "{graph}");
+        assert!(!graph.contains("[1:v][o1]"), "{graph}");
+    }
+
+    #[test]
+    fn a_placed_upper_layer_keeps_its_scale_node() {
+        let mut project = two_layer_project();
+        project
+            .layer_mut("pip")
+            .expect("pip exists")
+            .place = Place { x: 0.6, y: 0.6, size: 0.3 };
+        let graph = composite_graph(
+            &composite_meta(&project),
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(
+            graph.contains("[1:v]scale=192:192:flags=lanczos,format=rgba[o1]"),
+            "{graph}"
+        );
+        assert!(!graph.contains("[1:v]null"), "{graph}");
+    }
+
+    #[test]
+    fn an_identity_camera_is_an_empty_chain_and_gets_null() {
+        let mut project = two_layer_project();
+        project.layer_mut("pip").expect("pip exists").motion =
+            Some(crate::project::Motion {
+                keys: vec![crate::project::Key {
+                    t: Time::ZERO,
+                    zoom: 1.0,
+                    at: crate::project::Point { x: 0.5, y: 0.5 },
+                }],
+            });
+        let graph = composite_graph(
+            &composite_meta(&project),
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(graph.contains("[1:v]null[o1]"), "{graph}");
+    }
+
+    #[test]
+    fn a_vignette_mask_emits_vignette_not_null() {
+        let mut project = two_layer_project();
+        project.layer_mut("pip").expect("pip exists").mask =
+            Some(Mask::Vignette { angle: 0.5 });
+        let graph = composite_graph(
+            &composite_meta(&project),
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(graph.contains("vignette=angle=0.5000"), "{graph}");
+        assert!(!graph.contains("[1:v]null"), "{graph}");
     }
 }
 
