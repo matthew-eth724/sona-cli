@@ -1024,6 +1024,65 @@ impl Project {
                 }
             }
         }
+        out.extend(self.unapplied_layer_fields());
+        out
+    }
+
+    /// Fields `composite_graph` applies only to layers above the bottom: the
+    /// first entry of `by_z()` is the program frame, so its `place`,
+    /// `place_keys` and `start` never reach the graph. One diagnostic per
+    /// ignored field, at `tracks.layers[<id>].<field>`. Empty when nothing is
+    /// being silently ignored. The bottom is the lowest z, which is normally
+    /// but not necessarily the layer at z = 0.
+    pub fn unapplied_layer_fields(&self) -> Vec<Diagnostic> {
+        let mut out = Vec::new();
+        let ordered = self.by_z();
+        let Some(bottom) = ordered.first() else {
+            return out;
+        };
+        let id = &bottom.id;
+        let at = |field: &str| format!("tracks.layers[{id}].{field}");
+        if bottom
+            .place_keys
+            .as_ref()
+            .map(|k| !k.is_empty())
+            .unwrap_or(false)
+        {
+            out.push(
+                Diagnostic::new(
+                    "place_keys_unused",
+                    at("place_keys"),
+                    format!(
+                        "{id} is the bottom layer (normally the one at z = 0), so its placement keys are never composited; add a layer above it (`splice layer add pip --z 10`) and key that, or clear them with `splice key {id} --clear`"
+                    ),
+                )
+                .with_fix(format!("splice key {id} --clear")),
+            );
+        }
+        if bottom.start.micros() != 0 {
+            out.push(
+                Diagnostic::new(
+                    "layer_start_unused",
+                    at("start"),
+                    format!(
+                        "{id} is the bottom layer (normally the one at z = 0), so its start is not applied and its clips play from 0; start a layer above it, or reset it with `splice layer set {id} --start 0`"
+                    ),
+                )
+                .with_fix(format!("splice layer set {id} --start 0")),
+            );
+        }
+        if !bottom.place.is_canvas() {
+            out.push(
+                Diagnostic::new(
+                    "place_unused",
+                    at("place"),
+                    format!(
+                        "{id} is the bottom layer (normally the one at z = 0), so its place is ignored because the program frame is the full canvas; `--place` applies to layers above it. Reset it with `splice layer set {id} --place 0,0,1`"
+                    ),
+                )
+                .with_fix(format!("splice layer set {id} --place 0,0,1")),
+            );
+        }
         out
     }
 }
@@ -1892,5 +1951,106 @@ mod tests {
         assert_eq!(stored, file.to_string_lossy());
         let _ = std::fs::remove_dir_all(&proj);
         let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn bottom_layer_placement_keys_and_start_are_exactly_two_diagnostics() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        let main = p.main_layer_mut().unwrap();
+        main.place_keys = Some(vec![
+            PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 },
+            PlaceKey { t: Time::from_secs_f64(4.0), x: 0.8, y: 0.5 },
+        ]);
+        main.start = Time::from_secs_f64(1.0);
+        let mut media = MediaIndex::default();
+        let diags = p.diagnose(&mut media);
+        assert_eq!(diags.len(), 2, "{diags:?}");
+        assert_eq!(diags[0].code, "place_keys_unused");
+        assert_eq!(diags[0].at, "tracks.layers[main].place_keys");
+        assert_eq!(diags[0].fix.as_deref(), Some("splice key main --clear"));
+        assert_eq!(diags[1].code, "layer_start_unused");
+        assert_eq!(diags[1].at, "tracks.layers[main].start");
+        assert_eq!(diags[1].fix.as_deref(), Some("splice layer set main --start 0"));
+    }
+
+    fn layers_at_minus_five_and_zero() -> Project {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        p.tracks.layers.push(Layer {
+            id: "under".into(),
+            z: -5,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            place_keys: None,
+            mask: None,
+            clips: Vec::new(),
+        });
+        p
+    }
+
+    #[test]
+    fn fields_on_the_true_bottom_at_z_minus_five_are_reported() {
+        let mut p = layers_at_minus_five_and_zero();
+        let under = p.layer_mut("under").unwrap();
+        under.place_keys = Some(vec![PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 }]);
+        under.start = Time::from_secs_f64(1.0);
+        under.place = Place { x: 0.2, y: 0.5, size: 0.5 };
+        let diags = p.unapplied_layer_fields();
+        let codes: Vec<&str> = diags.iter().map(|d| d.code.as_str()).collect();
+        assert_eq!(
+            codes,
+            vec!["place_keys_unused", "layer_start_unused", "place_unused"],
+            "{diags:?}"
+        );
+        assert!(diags.iter().all(|d| d.at.starts_with("tracks.layers[under]")));
+        assert_eq!(
+            diags.iter().find(|d| d.code == "place_keys_unused").unwrap().fix.as_deref(),
+            Some("splice key under --clear")
+        );
+        assert_eq!(
+            diags.iter().find(|d| d.code == "layer_start_unused").unwrap().fix.as_deref(),
+            Some("splice layer set under --start 0")
+        );
+        assert_eq!(
+            diags.iter().find(|d| d.code == "place_unused").unwrap().fix.as_deref(),
+            Some("splice layer set under --place 0,0,1")
+        );
+    }
+
+    #[test]
+    fn fields_on_z_zero_are_silent_when_a_lower_z_layer_is_the_bottom() {
+        let mut p = layers_at_minus_five_and_zero();
+        let main = p.main_layer_mut().unwrap();
+        main.place_keys = Some(vec![PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 }]);
+        main.start = Time::from_secs_f64(1.0);
+        main.place = Place { x: 0.2, y: 0.5, size: 0.5 };
+        let diags = p.unapplied_layer_fields();
+        assert!(diags.is_empty(), "expected no diagnostics, got {diags:?}");
+    }
+
+    #[test]
+    fn a_canvas_place_on_the_bottom_is_not_unused() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        let bottom = p.main_layer_mut().unwrap();
+        bottom.place_keys = Some(vec![PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 }]);
+        bottom.place = Place::CANVAS;
+        let diags = p.unapplied_layer_fields();
+        let codes: Vec<&str> = diags.iter().map(|d| d.code.as_str()).collect();
+        assert_eq!(codes, vec!["place_keys_unused"], "{diags:?}");
+    }
+
+    #[test]
+    fn a_non_canvas_place_on_the_bottom_reports_place_unused() {
+        let mut p = Project::new(640, 360, Rational::new(30, 1));
+        let bottom = p.main_layer_mut().unwrap();
+        bottom.place = Place { x: 0.2, y: 0.5, size: 0.5 };
+        let diags = p.unapplied_layer_fields();
+        let codes: Vec<&str> = diags.iter().map(|d| d.code.as_str()).collect();
+        assert_eq!(codes, vec!["place_unused"], "{diags:?}");
+        assert_eq!(diags[0].at, "tracks.layers[main].place");
+        assert_eq!(
+            diags[0].fix.as_deref(),
+            Some("splice layer set main --place 0,0,1")
+        );
     }
 }

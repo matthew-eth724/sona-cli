@@ -752,9 +752,29 @@ splice layer list
 ```
 
 A layer is one simultaneous picture. `z` is the stacking order and must be
-unique; the layer at `z = 0` carries the program audio and must fill the canvas.
-`--place x,y,size` is the rectangle it occupies, in canvas fractions. `--start`
-is where its t=0 sits on the program clock.
+unique; the layer at `z = 0` carries the program audio and must fill the
+canvas, and the bottom layer (normally the one at `z = 0`) is the program
+frame. `--place x,y,size` is the rectangle it occupies, in canvas fractions.
+`--start` is where its t=0 sits on the program clock.
+
+Two rules, kept separate:
+
+- the bottom layer (lowest `z`) is the program frame: its `place`,
+  `place_keys` and `start` are reported, not applied (a `start` on the bottom
+  emits a `setpts` that the encoder re-bases away);
+- the layer at `z = 0` carries the program audio and must fill the canvas
+  (`place` of `{0,0,1}`).
+
+`splice key <id> --place`, `splice layer set <id> --start <t>` and
+`splice layer set <id> --place x,y,size` are refused (exit 5, `usage`) when
+`<id>` is the bottom layer — add a layer above it (`splice layer add pip --z
+10`) and edit that, or use `--zoom`/`--at` for a camera move on the bottom.
+`--start 0` and `--place 0,0,1` are no-ops there and are allowed, as are
+`--clear`, `--rm`, `--list` and `splice layer rm`: they are how a user gets out
+of the state. A hand-edited document whose bottom layer still carries those
+values keeps rendering; they are reported as `warnings[]` (`place_keys_unused`,
+`layer_start_unused`, `place_unused`) by `splice inspect`, `splice plan`,
+`splice render` and `splice frames`, never as errors.
 
 ```console
 $ splice layer add pip --z 10 --place 0.6,0.6,0.3 --start 1s
@@ -798,6 +818,13 @@ single `composite` step whose key carries the expressions.
 `--place` is a **placement** key, not a camera key: it moves where a layer above
 the bottom of the z order sits on the canvas, in layer-local time, and it compiles
 to an `overlay` x/y expression; the bottom layer keeps its position.
+
+`--place` on the bottom layer is refused (exit 5, `usage`): its keys never
+reach the composite, so `splice key <id> --place ...` on the bottom layer
+prints an error and takes no snapshot. Add a layer above it
+(`splice layer add pip --z 10`) and key that, or use `--zoom`/`--at` for a
+camera move, which the bottom layer does support. `splice key <id> --clear`
+removes the keys and is never refused.
 
 ```console
 $ splice key pip --t 0   --place 0.05,0.05

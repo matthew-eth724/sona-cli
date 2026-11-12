@@ -53,6 +53,9 @@ created them, and in `inspect`.
 | `captions_missing` | the SRT path is gone | the render fails; re-`caption` |
 | `media_missing` | a source file moved | `list` shows `missing: true` |
 | `text_past_end` | an overlay extends past the timeline | the overlay is simply cut short |
+| `place_keys_unused` | placement keys on the bottom layer | reported, not applied: the bottom layer (lowest `z`, normally `z = 0`) is the program frame; add a layer above it and key that, or `splice key <id> --clear` |
+| `layer_start_unused` | `start` on the bottom layer | reported, not applied: the bottom layer plays from 0; start a layer above it, or `splice layer set <id> --start 0` |
+| `place_unused` | `place` on the bottom layer | reported, not applied: the program frame fills the canvas; `--place` applies to layers above it, or `splice layer set <id> --place 0,0,1` |
 | `cache_large` | `.splice/cache` is over 1 GiB | `splice cache prune`; the cache is never authoritative, so deleting it costs a re-render at most |
 
 ## Symptoms
@@ -78,6 +81,20 @@ which is the clips. If the timeline is shorter than you think, the bed is cut.
 
 **`no layer at z = 0`.** A hand edit removed or moved the base layer. The layer at
 z = 0 carries the program audio and must fill the canvas; `splice undo` restores it.
+
+**Keyframes have no visible effect.** `splice key <id> --place`, `splice layer set
+<id> --start` and a non-canvas `splice layer set <id> --place` on the bottom layer
+(the lowest `z`, normally `z = 0`) are refused — exit 5, `usage`, nothing
+written and no snapshot — because the bottom layer is the program frame and
+those values never reach the composite. A document that already carries them
+(hand-edited, or written before this check) keeps rendering and reports them
+as `warnings[]` (`place_keys_unused`, `layer_start_unused`, `place_unused`) in
+`splice inspect`, `splice plan`, `splice render` and `splice frames` instead
+of failing. Move the edit to a layer above (`splice layer add pip --z 10`,
+then key that layer), or clear them with `splice key <id> --clear`,
+`splice layer set <id> --start 0` or `splice layer set <id> --place 0,0,1`.
+`--clear`, `--rm`, `--list` and `splice layer rm` are never refused, so there
+is always a way out.
 
 **Loudness lands a dB or two off target.** One-pass `loudnorm` applies gain
 dynamically, so a program with long quiet and loud sections can miss the target

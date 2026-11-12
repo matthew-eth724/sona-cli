@@ -98,16 +98,18 @@ one total order and no tie-breaking rule. Version 1's `tracks.video` is now
 | field | type | default | notes |
 | --- | --- | --- | --- |
 | `id` | string | required | `main` for the layer carried over from v1 |
-| `z` | i32 | required | higher is on top; `z: 0` is the program layer and carries audio |
-| `start` | time | `0` | where this layer's t=0 sits on the program clock |
-| `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions |
+| `z` | i32 | required | higher is on top; the layer at `z: 0` carries the program audio; the bottom layer (lowest `z`, normally `z: 0`) is the program frame |
+| `start` | time | `0` | where this layer's t=0 sits on the program clock; the bottom layer's value is reported, not applied (`layer_start_unused` in `splice inspect` and `splice plan` warnings) |
+| `place` | `{x, y, size}` | `{0, 0, 1}` | where its frame lands on the canvas, in canvas fractions; the bottom layer's value is reported, not applied (`place_unused`), because the program frame fills the canvas |
 | `motion` | object | omitted | the camera: `keys: [{t, zoom, at}]`, linear between keys |
 | `mask` | object | omitted | `{kind:"chroma", color, similarity, blend}` or `{kind:"vignette", angle}` |
-| `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides every layer except the one at the bottom of the z order; that bottom layer keeps its position. `place.size` does not animate |
+| `place_keys` | array | omitted | `[{t, x, y}]` in layer-local time: slides every layer except the one at the bottom of the z order; that bottom layer keeps its position, and its value is reported, not applied (`place_keys_unused`). `place.size` does not animate |
 | `clips` | array | required | sequential inside the layer: version 1's model, unchanged |
 
-The layer at `z: 0` must fill the canvas (`place` of `{0,0,1}`): a base layer with
-a hole is a bug, not a look.
+The layer at `z = 0` must fill the canvas (`place` of `{0,0,1}`): a base layer
+with a hole is a bug, not a look. The bottom layer's `place`, `start` and
+`place_keys` are instead reported as warnings (`place_unused`,
+`layer_start_unused`, `place_keys_unused`) and never applied.
 
 Multi-layer projects and `motion` render as one composite step, in `z` order.
 The design is [design-compositing.md](design-compositing.md).

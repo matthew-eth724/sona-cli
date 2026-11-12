@@ -580,6 +580,11 @@ pub fn plan(
     if ordered.is_empty() {
         bail!("project has no layers");
     }
+    // The bottom layer (by_z's first entry, the lowest z — normally z = 0) is
+    // the program frame: its place, place_keys and start are never lowered by
+    // composite_graph. Report them as warnings so a hand-edited document stays
+    // truthful, but never block: existing documents must keep rendering.
+    warnings.extend(project.unapplied_layer_fields());
     let mut renders: Vec<(String, String, PathBuf, Time, Time)> = Vec::new();
     for layer in &ordered {
         let (key, path) = plan_layer(
@@ -1020,7 +1025,7 @@ pub fn plan_json(plan: &RenderPlan, profile: Profile) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::project::{Canvas, Layer, Mask, Place};
+    use crate::project::{Canvas, Layer, Mask, Place, PlaceKey};
     use crate::time::Rational;
 
     fn canvas(w: u32, h: u32, fps: Rational) -> Canvas {
@@ -1225,6 +1230,86 @@ mod tests {
         .unwrap();
         assert!(graph.contains("vignette=angle=0.5000"), "{graph}");
         assert!(!graph.contains("[1:v]null"), "{graph}");
+    }
+
+    fn bottom_and_upper_project() -> Project {
+        let mut project = Project::new(640, 360, Rational::new(30, 1));
+        // `main` comes at z = 0 from `Project::new`; `under` at z = -5 is the
+        // real bottom, so fields on `under` are the ones that go unused.
+        project.tracks.layers.push(Layer {
+            id: "under".into(),
+            z: -5,
+            start: Time::ZERO,
+            place: Place::CANVAS,
+            motion: None,
+            place_keys: None,
+            mask: None,
+            clips: Vec::new(),
+        });
+        project
+    }
+
+    #[test]
+    fn keys_on_z_zero_reach_the_composite_and_warn_nothing_when_a_lower_layer_exists() {
+        let mut project = bottom_and_upper_project();
+        project
+            .layer_mut("main")
+            .expect("main exists")
+            .place_keys = Some(vec![
+                PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 },
+                PlaceKey { t: Time::from_secs_f64(4.0), x: 0.8, y: 0.5 },
+            ]);
+        let meta = composite_meta(&project); // by_z order: under first (base), main second
+        let graph = composite_graph(
+            &meta,
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(graph.contains("if(lt("), "{graph}");
+        // `plan` appends `project.unapplied_layer_fields()` to its warnings,
+        // and the bottom (`under`) is clean here, so nothing is carried.
+        assert!(
+            project.unapplied_layer_fields().is_empty(),
+            "{:?}",
+            project.unapplied_layer_fields()
+        );
+    }
+
+    #[test]
+    fn keys_on_the_bottom_layer_do_not_reach_the_composite_and_warn() {
+        let mut project = bottom_and_upper_project();
+        project
+            .layer_mut("under")
+            .expect("under exists")
+            .place_keys = Some(vec![
+                PlaceKey { t: Time::ZERO, x: 0.2, y: 0.5 },
+                PlaceKey { t: Time::from_secs_f64(4.0), x: 0.8, y: 0.5 },
+            ]);
+        let meta = composite_meta(&project);
+        let graph = composite_graph(
+            &meta,
+            (640, 360),
+            Rational::new(30, 1),
+            &project,
+            0,
+        )
+        .unwrap();
+        assert!(!graph.contains("if(lt("), "{graph}");
+        let diags = project.unapplied_layer_fields();
+        assert_eq!(
+            diags.iter().filter(|d| d.code == "place_keys_unused").count(),
+            1,
+            "{diags:?}"
+        );
+        assert!(
+            diags.iter().any(|d| {
+                d.code == "place_keys_unused" && d.at == "tracks.layers[under].place_keys"
+            }),
+            "{diags:?}"
+        );
     }
 }
 

@@ -1717,7 +1717,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             if produced.is_empty() {
                 bail!("usage: pass --at <times> or --sheet <n>");
             }
-            ok(json!({"frames": produced}), &[]);
+            ok(json!({"frames": produced}), &plan.warnings);
             Ok(())
         }
         Cmd::Plan { preview, loudnorm, lufs, true_peak, lra } => {
@@ -1777,9 +1777,6 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut media = MediaIndex::default();
             match action {
                 LayerCmd::Add { id, z, place, start, dry_run } => {
-                    if !dry_run {
-                        crate::history::record(&store, "layer add")?;
-                    }
                     if store.project.layer(&id).is_some() {
                         bail!("usage: a layer called {id} already exists");
                     }
@@ -1798,14 +1795,52 @@ fn dispatch(cli: Cli) -> Result<()> {
                         mask: None,
                         clips: Vec::new(),
                     });
+                    // Never save a document the next command would refuse: a
+                    // wrong `--z` or a non-canvas `place` on `z = 0` is a usage
+                    // error (exit 5), not `project_invalid`, and no snapshot is
+                    // taken when it fails.
+                    store
+                        .project
+                        .validate()
+                        .map_err(|e| anyhow::anyhow!("usage: {e}"))?;
+                    if !dry_run {
+                        crate::history::record(&store, "layer add")?;
+                    }
                     finish(&mut store, &mut media, dry_run, json!({"added": id, "z": z}))?;
                 }
                 LayerCmd::Set { id, z, place, start, dry_run } => {
-                    if !dry_run {
-                        crate::history::record(&store, "layer set")?;
-                    }
                     let start_t = start.map(|s| Time::parse(&s)).transpose()?;
                     let p = place.map(|p| parse_place(&p)).transpose()?;
+                    // Read the layer through the immutable accessor first: the
+                    // refusal must come before history::record, so a refused
+                    // edit takes no snapshot and writes nothing. The condition
+                    // is bottom-of-by_z() (lowest z), never z == 0.
+                    store
+                        .project
+                        .layer(&id)
+                        .with_context(|| format!("usage: no layer {id}"))?;
+                    let is_bottom = store
+                        .project
+                        .by_z()
+                        .first()
+                        .map(|l| l.id == id)
+                        .unwrap_or(false);
+                    if is_bottom {
+                        if let Some(s) = start_t {
+                            if s.micros() != 0 {
+                                bail!(
+                                    "usage: {id} is the bottom layer (normally the one at z = 0); its start is not applied and its clips play from 0. Start a layer above it (`splice layer add pip --z 10`), or reset it with `splice layer set {id} --start 0`"
+                                );
+                            }
+                        }
+                        if let Some(p) = p {
+                            if !p.is_canvas() {
+                                bail!(
+                                    "usage: {id} is the bottom layer (normally the one at z = 0); its place is ignored because the program frame is the full canvas. `--place` applies to layers above it"
+                                );
+                            }
+                        }
+                    }
                     let layer = store
                         .project
                         .layer_mut(&id)
@@ -1818,6 +1853,17 @@ fn dispatch(cli: Cli) -> Result<()> {
                     }
                     if let Some(s) = start_t {
                         layer.start = s;
+                    }
+                    // Never save a document the next command would refuse: a
+                    // wrong `--z` or a non-canvas `place` on `z = 0` is a usage
+                    // error (exit 5), not `project_invalid`, and no snapshot is
+                    // taken when it fails.
+                    store
+                        .project
+                        .validate()
+                        .map_err(|e| anyhow::anyhow!("usage: {e}"))?;
+                    if !dry_run {
+                        crate::history::record(&store, "layer set")?;
                     }
                     finish(&mut store, &mut media, dry_run, json!({"changed": [id]}))?;
                 }
@@ -1998,15 +2044,35 @@ fn dispatch(cli: Cli) -> Result<()> {
         Cmd::Key { layer, t, zoom, at, place, list, rm, clear, dry_run } => {
             let mut store = Store::open(&path)?;
             let mut media = MediaIndex::default();
+            let at_point = at.as_deref().map(parse_point).transpose()?;
+            let place_point = place.as_deref().map(parse_point).transpose()?;
+            // Read the layer through the immutable accessor first: the refusal
+            // must come before history::record, so a refused edit takes no
+            // snapshot and writes nothing. The condition is bottom-of-by_z()
+            // (lowest z, normally z = 0), never z == 0 or "single layer".
+            store
+                .project
+                .layer(&layer)
+                .with_context(|| format!("usage: no layer {layer}"))?;
+            if place_point.is_some()
+                && store
+                    .project
+                    .by_z()
+                    .first()
+                    .map(|l| l.id == *layer)
+                    .unwrap_or(false)
+            {
+                bail!(
+                    "usage: {layer} is the bottom layer (normally the one at z = 0), so placement keys on it are never applied; add a layer above it (`splice layer add pip --z 10`) and key that, or use `--zoom`/`--at` for a camera move"
+                );
+            }
             if !dry_run && !list {
                 crate::history::record(&store, "key")?;
             }
-            let at_point = at.as_deref().map(parse_point).transpose()?;
             let layer_ref = store
                 .project
                 .layer_mut(&layer)
                 .with_context(|| format!("usage: no layer {layer}"))?;
-            let place_point = place.as_deref().map(parse_point).transpose()?;
             if clear {
                 layer_ref.motion = None;
                 layer_ref.place_keys = None;
@@ -2913,5 +2979,96 @@ mod tests {
         } else {
             panic!("expected Cmd::Render");
         }
+    }
+
+    /// Finding-5 trap: `layer set main --place ...` on a non-bottom layer at
+    /// `z = 0` must not save a document the next command refuses. With a
+    /// `z = -5` layer present, `main` is not the bottom so the bottom refusal
+    /// does not fire, but `validate` still rejects a non-canvas place on `main`
+    /// (exit 2, `project_invalid`) and splice.json is left byte-identical.
+    #[test]
+    fn layer_set_on_z_zero_refused_when_it_breaks_the_canvas_rule() {
+        let dir = std::env::temp_dir().join(format!("splice-layer-trap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("splice.json");
+
+        // main at z = 0 (canvas); under at z = -5 (the real bottom, non-canvas).
+        let mut store = Store::create(&path, 640, 360, Rational::new(30, 1)).unwrap();
+        store.project.tracks.layers.push(crate::project::Layer {
+            id: "under".into(),
+            z: -5,
+            start: Time::ZERO,
+            place: crate::project::Place { x: 0.2, y: 0.5, size: 0.5 },
+            motion: None,
+            place_keys: None,
+            mask: None,
+            clips: Vec::new(),
+        });
+        store.save().unwrap();
+
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        let cli = Cli::try_parse_from([
+            "splice",
+            "--project",
+            path.to_str().unwrap(),
+            "layer",
+            "set",
+            "main",
+            "--place",
+            "0.2,0.5,0.5",
+        ])
+        .unwrap();
+        let result = dispatch(cli);
+        assert!(result.is_err(), "expected a refusal, got {:?}", result);
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(before, after, "splice.json must be unchanged by a refused edit");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A legitimate `layer set` on a layer above the bottom still applies.
+    #[test]
+    fn layer_set_on_upper_layer_applies_its_place() {
+        let dir = std::env::temp_dir().join(format!("splice-layer-upper-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("splice.json");
+
+        let mut store = Store::create(&path, 640, 360, Rational::new(30, 1)).unwrap();
+        store.project.tracks.layers.push(crate::project::Layer {
+            id: "pip".into(),
+            z: 10,
+            start: Time::ZERO,
+            place: crate::project::Place::CANVAS,
+            motion: None,
+            place_keys: None,
+            mask: None,
+            clips: Vec::new(),
+        });
+        store.save().unwrap();
+
+        let cli = Cli::try_parse_from([
+            "splice",
+            "--project",
+            path.to_str().unwrap(),
+            "layer",
+            "set",
+            "pip",
+            "--place",
+            "0.6,0.6,0.3",
+        ])
+        .unwrap();
+        let result = dispatch(cli);
+        assert!(result.is_ok(), "expected ok, got {:?}", result.err());
+
+        let store = Store::open(&path).unwrap();
+        let pip = store.project.layer("pip").expect("pip exists");
+        assert!((pip.place.x - 0.6).abs() < f32::EPSILON);
+        assert!((pip.place.y - 0.6).abs() < f32::EPSILON);
+        assert!((pip.place.size - 0.3).abs() < f32::EPSILON);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
