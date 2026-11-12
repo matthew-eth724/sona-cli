@@ -90,15 +90,20 @@ pub const WARN_BYTES: u64 = 1 << 30;
 mod tests {
     use super::*;
 
+    // The two tests need different directories: sharing one name made the
+    // "missing" test observe the other test's file when they ran in parallel,
+    // and it failed intermittently with (11, 1) instead of (0, 0).
     #[test]
     fn usage_of_a_missing_dir_is_zero_not_an_error() {
-        let gone = std::env::temp_dir().join(format!("splice-cache-usage-{}", std::process::id()));
+        let gone =
+            std::env::temp_dir().join(format!("splice-cache-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&gone);
         assert_eq!(usage(&gone), (0, 0));
     }
 
     #[test]
     fn usage_counts_a_written_file_at_its_real_size() {
-        let dir = std::env::temp_dir().join(format!("splice-cache-usage-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("splice-cache-written-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("deadbeef.mp4");
