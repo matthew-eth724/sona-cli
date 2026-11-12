@@ -93,7 +93,15 @@ captions do:
 $ brew install ffmpeg            # macOS
 $ sudo apt install ffmpeg        # Debian/Ubuntu
 $ winget install Gyan.FFmpeg     # Windows, then open a new terminal
+$ ffmpeg -filters | grep -w subtitles   # must print a line: that is libass
 ```
+
+`brew install ffmpeg` can install a build **without libass** — GitHub's macOS
+runners do exactly that (ffmpeg 9.0.2, no `ass` or `subtitles` filter), and a
+distro bottle can too. Titles and captions are drawn by libass, so on such a
+machine every render with a caption fails with `No such filter: 'subtitles'`
+while everything else works. `splice doctor` reports it as `ffmpeg_incapable`,
+and the check above is what tells you before a render does.
 
 Resolution order, so a bundled copy can win without touching `PATH`:
 `SPLICE_FFMPEG` (a directory holding both, or a path whose sibling `ffprobe` is

@@ -85,11 +85,20 @@ function platformChecks() {
   // doctor is the contract every other command leans on: if these are false, a
   // render fails later with a filter error that looks like the edit's fault.
   const doc = json(["doctor"], { allowFailure: true });
-  check("doctor exits with JSON and ok:true", doc.ok === true, doc.ok ? undefined : doc);
+
+  // An incapable ffmpeg is a legitimate state (a distro bottle without libass), so
+  // it gets its own contract instead of failing the four capability assertions.
+  const source = doc.ffmpeg_source ?? doc.report?.ffmpeg_source;
+  if (doc.ok !== true && doc.error?.code === "ffmpeg_incapable") {
+    degradedChecks(doc, source);
+    return;
+  }
+
+  check("doctor exits with JSON and ok:true", doc.ok === true, doc);
   check("doctor sees libx264", doc.encoders?.libx264 === true, JSON.stringify(doc.encoders));
   check("doctor sees libass", doc.filters?.libass === true, JSON.stringify(doc.filters));
   check("doctor resolved a font", typeof doc.font === "string" && doc.font.length > 0, doc.font);
-  check("doctor names where ffmpeg came from", typeof doc.ffmpeg_source === "string", doc.ffmpeg_source);
+  check("doctor names where ffmpeg came from", typeof source === "string", source);
 
   const dir = mkdtempSync(join(tmpdir(), "splice-verify-"));
   try {
@@ -150,6 +159,46 @@ function platformChecks() {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** With an ffmpeg that lacks libass: the contract is a clean refusal, not a stack. */
+function degradedChecks(doc, source) {
+  process.stdout.write("  ffmpeg lacks libass: verifying the refusal path instead\n");
+  const r = spawnSync(SPLICE, ["doctor"], { encoding: "utf8" });
+  check("doctor exits 4 when ffmpeg cannot burn subtitles", r.status === 4, `exit ${r.status}`);
+  check("the error names ffmpeg_incapable", doc.error?.code === "ffmpeg_incapable", JSON.stringify(doc.error));
+  check("the error carries a fix", typeof doc.error?.fix === "string" && doc.error.fix.length > 0, doc.error?.fix);
+  check("the report still shows what it did find", typeof doc.report?.ffmpeg === "string", JSON.stringify(doc.report?.ffmpeg));
+  check("it still says where ffmpeg came from", typeof source === "string", source);
+
+  const dir = mkdtempSync(join(tmpdir(), "splice-degraded-"));
+  try {
+    const src = makeSource(dir);
+    const work = join(dir, "project");
+    mkdirSync(work);
+    execFileSync("cp", [src, join(work, "clip.mp4")]);
+    json(["init", "--size", "320x240", "--fps", "25"], { cwd: work });
+    json(["add", "./clip.mp4"], { cwd: work });
+    check("editing works without libass", json(["list"], { cwd: work }).clips?.length === 1);
+    // A plain render is fine without libass; it is the caption burn that needs it.
+    json(["render", "-o", "plain.mp4"], { cwd: work });
+    check("a render without captions still works", existsSync(join(work, "plain.mp4")));
+    writeFileSync(join(work, "subs.srt"), "1\n00:00:00,500 --> 00:00:02,000\nhello\n");
+    json(["caption", "subs.srt"], { cwd: work });
+    const render = json(["render", "-o", "out.mp4"], { cwd: work, allowFailure: true });
+    // No pre-flight capability check exists on the render path, so this fails as
+    // ffmpeg_failed naming the missing filter. What matters is that it fails
+    // cleanly, in JSON, with a fix — and leaves no partial output to trust.
+    check(
+      "a render that needs libass fails cleanly instead of writing a broken file",
+      render.ok === false && render.error?.code === "ffmpeg_failed" && render.error?.fix,
+      JSON.stringify(render.error)
+    );
+    check("it did not leave an output file behind", !existsSync(join(work, "out.mp4")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  process.stdout.write("  skipped: text, captions, frames, moved-project render (need libass)\n");
 }
 
 /** Whisper, because it needs no key: speech in, words out, paths stored relatively. */

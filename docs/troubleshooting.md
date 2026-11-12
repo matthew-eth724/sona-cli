@@ -38,7 +38,7 @@ $ splice doctor
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
 | `no_font` | 2 | no usable font: no `fc-match`, no bundled-path font | `set SPLICE_FONT=/path/to/font.ttf`, or install one; `doctor` shows where it looked |
 | `ffmpeg_missing` | 4 | `ffmpeg` or `ffprobe` is not on `PATH` | the `fix` line names the install command for your OS |
-| `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264`, `libass` or `freetype` | install a full build; `doctor` lists what is missing |
+| `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264` or `libass` | check it yourself: `ffmpeg -filters \| grep -w subtitles` (libass) and `ffmpeg -encoders \| grep -w libx264`; if either is empty, install a build that has it. Homebrew on macOS can install an ffmpeg without libass |
 
 ## Warnings
 
