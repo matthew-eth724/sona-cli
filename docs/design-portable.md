@@ -111,6 +111,44 @@ hole. The ffmpeg build is cached as a released artifact keyed on
 `sha256(vendor/ffmpeg/**)`, because a 40-minute cold ffmpeg build on every push is
 how a matrix becomes resented.
 
+## Measured, before any packaging
+
+Built ffmpeg 7.1.1 from source with `--disable-everything`, the decoders, encoders,
+muxers and filters this tool's argv actually names, `--enable-libx264`,
+`--enable-libfreetype`, and `--extra-ldflags=-static`. Built, stripped by the
+build script, and run — not estimated.
+
+| artifact | raw | gzipped |
+| --- | --- | --- |
+| `ffmpeg` (slim, static) | **12 MB** | 4.7 MB |
+| `ffprobe` (same config) | **12 MB** | 4.6 MB |
+| both, per platform | **24 MB** | ~9.3 MB |
+| the design's estimate | 10 MB | — |
+
+The estimate was 2.4x optimistic. Static glibc alone is a 5.5 MB archive and x264
+is 2.7 MB; the system `ffmpeg` is 360 KB only because it borrows shared libraries
+at runtime.
+
+Two findings that matter more than the total:
+
+1. **libass cannot link statically from Debian's packages.** Its
+   `pkg-config --static` chain wants harfbuzz, glib, graphite2, sysprof and pcre2,
+   none of which ship `.a` files. A static build means building libass from source
+   with harfbuzz off, alongside fribidi and freetype, which do have archives. So
+   the subtitle support this design treated as free is the one dependency needing
+   real work, and it adds another 1–2 MB.
+2. **`ffprobe` costs as much as `ffmpeg` inside a static bundle**, because both
+   carry their own copy of libc. Bundling probe doubles the price for a job that is
+   a few hundred lines of JSON parsing.
+
+So the choice is three shapes, not one:
+
+| shape | download | what the user still installs |
+| --- | --- | --- |
+| bundle ffmpeg + ffprobe everywhere | ~9.3 MB | nothing |
+| bundle ffmpeg, probe with it | ~4.7 MB | nothing; stderr parsing becomes ours |
+| bundle on Windows only | ~9.3 MB there, 1.1 MB elsewhere | nothing on Windows, `brew`/`apt` elsewhere |
+
 ## Costs
 
 | per machine, cold | today | this design |
