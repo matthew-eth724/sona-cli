@@ -149,6 +149,43 @@ So the choice is three shapes, not one:
 | bundle ffmpeg, probe with it | ~4.7 MB | nothing; stderr parsing becomes ours |
 | bundle on Windows only | ~9.3 MB there, 1.1 MB elsewhere | nothing on Windows, `brew`/`apt` elsewhere |
 
+## The rebuild, proven
+
+The claim "Debian's libass cannot link statically" was about Debian's build, not
+about libass. Built from source, here:
+
+| component | configure | result |
+| --- | --- | --- |
+| HarfBuzz 15.1.0 | glib/gobject/icu/graphite2/cairo/subset/tests/docs disabled, freetype enabled, static | `libharfbuzz.a` 3.6 MB |
+| libass 0.17.5 | fontconfig + fribidi + that HarfBuzz, static | `libass.a` 491 KB |
+| libunibreak 6.1 | required by libass, no static package in Debian | 230 KB |
+| ffmpeg 7.1.1 | `--disable-everything` plus those, `-static` | 11.8 MB stripped, `ass` and `subtitles` present |
+
+The subtitle stack costs about two megabytes on top of the twelve, and
+"impossible" was a packaging choice rather than a property of the library.
+
+**Shaping was verified two ways, not by trusting identical output.** A subtitled
+frame differs from the same frame without one by 22 dB, with 1884 ink pixels — so
+text was drawn, and `PSNR = inf` against the system build cannot have been two
+blank frames agreeing. Then a zero-width non-joiner control: `لا` versus
+`ل<ZWNJ>ا`, and the Devanagari conjunct `क्ष` versus its broken form, differ by 26.9
+and 27.9 dB, while identical Latin text scores `inf`. ZWNJ changes the picture only
+if a shaper is reached — and every script matched the system build bit for bit.
+
+## What the rebuild still does not give
+
+**`drawtext` is absent from this build.** ffmpeg 7.1's `drawtext` needs
+`libfreetype` *and* `libharfbuzz`, and this configure dropped the filter even with
+both present. `splice text` uses `drawtext`, so a bundled binary built this way
+could do every job except the text titles.
+
+The clean answer is not another configure flag: **compile text overlays to ASS** and
+run them through libass, which is already linked and already carries both
+dependencies. Captions and overlays would share one text engine instead of two,
+`drawtext` leaves the dependency list, and the bundled filter set becomes complete.
+That is a contained change to the overlay lowering, and it should land before the
+bundle rather than after.
+
 ## Costs
 
 | per machine, cold | today | this design |
