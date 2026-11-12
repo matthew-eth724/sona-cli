@@ -35,8 +35,27 @@ $SONA transcribe | jq '{provider, model, words, cues, cached}'
 $SONA transcribe | jq '.cached'              # true: no request the second time
 ```
 
+## Whisper
+
+Local, free, offline — and slow. Needs a program and a model **file**:
+
+```bash
+$SONA config set whisper.program /opt/whisper.cpp/whisper-cli
+$SONA config set whisper.model /opt/whisper.cpp/ggml-large-v3-turbo.bin
+$SONA doctor | jq '.providers.whisper.ready'     # must be true
+$SONA transcribe --provider whisper
+```
+
+Measured with `ggml-large-v3-turbo` on 4 vCPUs: 15 s of audio in 12–15 s; 40 s in
+2 m 29 s. Plan a test with a short clip, or you will wait.
+
 ## Gotchas
 
+- Whisper needs `whisper.model` to be a path to a `ggml-*.bin`, not a name like
+  "small". A name produces `whisper_model` with the fix.
+- Whisper writes into a temp directory and its JSON is parsed with the same code
+  as the hosted replies; the fixture is `tests/fixtures/asr/whisper-large-v3-turbo.json`
+  and it is what the punctuation-merge test runs against.
 - **`transcribe` does not burn.** The JSON says `attached: false` and carries a
   `next` command. A render straight after it will have no captions, and that is
   correct — check `attached` before blaming the render.

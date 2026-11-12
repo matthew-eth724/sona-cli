@@ -25,6 +25,8 @@ pub fn parse_value(v: &Value) -> Result<Parsed> {
         from_gemini(v)
     } else if v.get("results").is_some() {
         from_deepgram(v)
+    } else if v.get("transcription").is_some() {
+        from_whisper(v)
     } else if v.get("status").and_then(|s| s.as_str()) == Some("completed") {
         // A completed Gemini interaction with no `steps` is audio with no
         // speech: measured on five seconds of a sine tone, the whole body is
@@ -157,6 +159,91 @@ fn from_deepgram(v: &Value) -> Result<Parsed> {
     })
 }
 
+/// whisper.cpp `-ojf`: a `transcription` array of segments, each with `tokens`
+/// carrying millisecond `offsets`. The token stream is the word-level source —
+/// the segment timestamps alone are four-second blocks.
+///
+/// Special tokens (`[_BEG_]`, `[_TT_1100]`) are control codes, not words, and
+/// carry no meaning for captions.
+fn from_whisper(v: &Value) -> Result<Parsed> {
+    let mut words = Vec::new();
+    let segments = v
+        .get("transcription")
+        .and_then(|t| t.as_array())
+        .context("whisper: `transcription` is not an array")?;
+    for seg in segments {
+        let Some(tokens) = seg.get("tokens").and_then(|t| t.as_array()) else {
+            // A segment without tokens: fall back to its text with the block's
+            // own span, so nothing is silently dropped.
+            if let Some(text) = seg.get("text").and_then(|t| t.as_str()) {
+                let (a, b) = segment_span(seg);
+                for w in text.split_whitespace() {
+                    words.push(word(w.to_string(), a, b, None, None));
+                }
+            }
+            continue;
+        };
+        for t in tokens {
+            let text = t.get("text").and_then(|x| x.as_str()).unwrap_or("");
+            if text.starts_with('[') && text.ends_with(']') {
+                continue;
+            }
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let (a, b) = token_span(t);
+            let p = t.get("p").and_then(|x| x.as_f64()).map(|x| x as f32);
+            if is_punctuation(trimmed) {
+                // whisper tokenises " ." and " ," separately. As their own word
+                // they render as "them ,", so they attach to the word before.
+                if let Some(prev) = words.last_mut() {
+                    prev.text.push_str(trimmed);
+                    prev.end = b.max(prev.end);
+                    continue;
+                }
+            }
+            words.push(word(trimmed.to_string(), a, b, None, p));
+        }
+    }
+    let language = v
+        .pointer("/result/language")
+        .or_else(|| v.pointer("/params/language"))
+        .and_then(|l| l.as_str())
+        .filter(|l| *l != "auto" && !l.is_empty())
+        .map(str::to_string);
+    Ok(Parsed {
+        words,
+        provider: "whisper".into(),
+        language,
+        approximate: false,
+    })
+}
+
+fn is_punctuation(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| ".,!?;:'\"()[]{}—–-".contains(c))
+}
+
+fn ms(v: &Value) -> Option<Time> {
+    v.as_i64().map(Time::from_micros).map(|t| Time::from_micros(t.micros() * 1000))
+}
+
+fn token_span(t: &Value) -> (Time, Time) {
+    let o = t.get("offsets");
+    let a = o.and_then(|o| ms(o.get("from")?)).unwrap_or(Time::ZERO);
+    let b = o.and_then(|o| ms(o.get("to")?)).unwrap_or(a);
+    (a, b.max(a))
+}
+
+fn segment_span(seg: &Value) -> (Time, Time) {
+    let o = seg.get("offsets");
+    let a = o.and_then(|o| ms(o.get("from")?)).unwrap_or(Time::ZERO);
+    let b = o.and_then(|o| ms(o.get("to")?)).unwrap_or(a);
+    (a, b.max(a))
+}
+
 /// Subtitles: cues, not words. Word times inside a cue are interpolated by
 /// character share, so they are marked approximate.
 fn from_srt(path: &Path) -> Result<Parsed> {
@@ -221,6 +308,34 @@ mod tests {
         let p = parse_file(&fixture("gemini-diarized.json")).unwrap();
         assert_eq!(p.words[0].speaker, Some(0));
         assert_eq!(p.words[1].speaker, Some(1));
+    }
+
+    #[test]
+    fn whisper_tokens_become_words_without_a_space_before_punctuation() {
+        let p = parse_file(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/asr/whisper-large-v3-turbo.json"))
+        .unwrap();
+        assert!(p.words.len() > 20);
+        assert_eq!(p.provider, "whisper");
+        // control tokens are not words
+        assert!(!p.words.iter().any(|w| w.text.starts_with('[')));
+        // punctuation is not its own word, and does not get a space in front
+        assert!(!p.words.iter().any(|w| crate::transcript::is_punctuation(&w.text)));
+        let joined = p.words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ");
+        assert!(!joined.contains(" ,"), "{joined}");
+        assert!(!joined.contains(" ."), "{joined}");
+    }
+
+    #[test]
+    fn whisper_offsets_are_milliseconds() {
+        let p = parse_file(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/asr/whisper-large-v3-turbo.json"))
+        .unwrap();
+        // first real word starts at 0 and ends inside the first second
+        assert!(p.words[0].start.micros() < 1_000_000);
+        assert!(p.words[0].end.micros() <= 1_000_000);
+        // and the transcript spans roughly the audio, not hundreds of seconds
+        assert!(p.words.last().unwrap().end.micros() < 60_000_000);
     }
 
     #[test]

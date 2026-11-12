@@ -331,8 +331,22 @@ $ splice transcribe
 ```
 
 - **Provider**: `--provider`, else the first one with a key, else `asr_no_key`
-  naming both `config set` commands. `whisper` is refused: it is an external
-  binary, not an HTTP endpoint.
+  naming both `config set` commands. `whisper` is the third option and runs
+  locally: no key, no network, no cost — but it needs the program and a model
+  file configured:
+
+  ```console
+  $ splice config set whisper.program /opt/whisper.cpp/whisper-cli
+  $ splice config set whisper.model /opt/whisper.cpp/ggml-small.bin
+  $ splice transcribe --provider whisper
+  ```
+
+  `whisper.model` is a **path to a `ggml-*.bin`**, not a name — the program takes
+  a file. `whisper.program` defaults to `whisper-cli` or `whisper` on `PATH`.
+  It is slow by local-transcription standards: measured on 4 vCPUs with
+  `ggml-large-v3-turbo`, 15 seconds of audio took 12–15 seconds, and 40 seconds
+  took 2 m 29 s. The 10-minute cap applies here too, because a long local run is
+  also a surprise.
 - **Model**: `--model`, else the configured one, else the pinned default.
 - **Audio**: `--audio`, else the first clip's source. Downmixed to mono 16 kHz
   mp3 at 64 kbit — ten minutes is about 4.8 MB, comfortably inside Gemini's 20 MB
@@ -673,6 +687,10 @@ $ splice config list
               "model":{"value":"nova-3","source":"file"}},
   "whisper":{"api_key":{"set":false,"source":null},"model":{"value":"small","source":"default"}}}}
 ```
+
+`config set <provider>.program <path>` exists for whisper, the one provider that
+is a program rather than an endpoint. `doctor` reports `program`, `model_file`
+and a `ready` flag for it, because for whisper "set" is not "usable".
 
 **Precedence.** A key comes from the environment first, then the file; the
 environment wins because that is what CI mounts. A model comes from `--model` on

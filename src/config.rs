@@ -104,6 +104,10 @@ pub struct ProviderConfig {
     pub api_key: Option<Secret>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The executable, for providers that are programs rather than endpoints
+    /// (whisper). Ignored by the HTTP providers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

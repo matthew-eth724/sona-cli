@@ -6,6 +6,7 @@
 use anyhow::{bail, Context, Result};
 use base64::Engine as _;
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::config::{Config, Provider, Resolved, Secret};
@@ -92,7 +93,10 @@ fn urlencode(s: &str) -> String {
         .collect()
 }
 
+/// whisper.cpp is a program, not an endpoint: it gets a file path, not bytes.
+/// Callers pass an empty `Secret` for it, which is why the key is unused here.
 pub fn transcribe(p: Provider, model: &str, language: Option<&str>, audio: &[u8], key: &Secret) -> Result<Parsed> {
+    let _ = key;
     let (status, body) = match p {
         Provider::Gemini => {
             let body = gemini_body(model, audio);
@@ -104,9 +108,9 @@ pub fn transcribe(p: Provider, model: &str, language: Option<&str>, audio: &[u8]
             key.expose(),
             audio,
         )?,
-        Provider::Whisper => bail!(
-            "asr_unsupported: whisper runs as an external binary and is not wired up yet; use `splice index --from <whisper.json>`"
-        ),
+        // whisper is a program that wants a path, not bytes; the CLI calls
+        // `transcribe_whisper` for it. Reaching here means a caller mixed them up.
+        Provider::Whisper => bail!("internal: whisper needs a file path; call transcribe_whisper"),
     };
     if !(200..300).contains(&status) {
         return Err(error_for(p, status, &body));
@@ -338,4 +342,111 @@ mod tests {
         assert!(e.contains("--yes"), "{e}");
         assert!(check_duration(long, true, ten).is_ok());
     }
+}
+
+/// Locates the whisper executable: the configured `whisper.program`, else
+/// `whisper-cli` / `whisper` on PATH.
+pub fn whisper_program(cfg: &Config) -> Result<PathBuf> {
+    if let Some(p) = cfg.provider(Provider::Whisper).program {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+        bail!(
+            "whisper_missing: whisper.program is set to `{p}` which is not a file; run `splice config set whisper.program <path>`"
+        );
+    }
+    for name in ["whisper-cli", "whisper"] {
+        if let Some(p) = find_on_path(name) {
+            return Ok(p);
+        }
+    }
+    bail!(
+        "whisper_missing: no whisper binary found; install whisper.cpp and run `splice config set whisper.program /path/to/whisper-cli`"
+    )
+}
+
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let exe = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    };
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(&exe))
+            .find(|p| p.is_file())
+    })
+}
+
+/// Runs `whisper-cli -ojf` and reads the JSON it writes.
+///
+/// `-np` keeps its own progress off stdout; `-ojf` is what produces token-level
+/// offsets, without which whisper only gives four-second blocks. The audio is
+/// passed by path because that is the interface it has, and it accepts the mp3
+/// this tool already extracts.
+pub fn transcribe_whisper(
+    cfg: &Config,
+    model: &str,
+    language: Option<&str>,
+    audio: &Path,
+) -> Result<Parsed> {
+    let program = whisper_program(cfg)?;
+    if model.trim().is_empty() || model == Provider::Whisper.default_model() {
+        bail!(
+            "whisper_model: whisper needs a model file, not a name; run `splice config set whisper.model /path/to/ggml-small.bin`"
+        );
+    }
+    if !Path::new(model).is_file() {
+        bail!(
+            "whisper_model: `{model}` is not a file; run `splice config set whisper.model /path/to/ggml-small.bin`"
+        );
+    }
+    let out_dir = std::env::temp_dir().join(format!(
+        "splice-whisper-{}-{}",
+        std::process::id(),
+        audio
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audio")
+    ));
+    let _ = std::fs::remove_dir_all(&out_dir);
+    std::fs::create_dir_all(&out_dir)?;
+    let out_base = out_dir.join("out");
+
+    let mut cmd = std::process::Command::new(&program);
+    cmd.arg("-m").arg(model).arg("-f").arg(audio);
+    cmd.arg("-ojf").arg("-of").arg(&out_base).arg("-np");
+    if let Some(l) = language {
+        cmd.arg("-l").arg(l);
+    }
+    let started = std::time::Instant::now();
+    let out = cmd
+        .output()
+        .with_context(|| format!("running {}", program.display()))?;
+    if !out.status.success() {
+        let tail: String = String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let _ = std::fs::remove_dir_all(&out_dir);
+        bail!("whisper_failed: {} exited {}{}", program.display(), out.status, if tail.is_empty() { String::new() } else { format!(": {tail}") });
+    }
+    let json_path = out_base.with_extension("json");
+    let raw = std::fs::read_to_string(&json_path).with_context(|| {
+        format!("whisper wrote no JSON to {}", json_path.display())
+    })?;
+    let _ = std::fs::remove_dir_all(&out_dir);
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("asr_unreadable: whisper wrote non-JSON: {e}"))?;
+    let mut parsed = crate::transcript::parse_value(&value)
+        .map_err(|e| anyhow::anyhow!("asr_unreadable: whisper's JSON: {e}"))?;
+    parsed.provider = "whisper".into();
+    let _ = started;
+    Ok(parsed)
 }

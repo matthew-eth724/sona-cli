@@ -94,7 +94,8 @@ splice caption captions.srt     # attach for burn-in — transcribe does not
 splice render -o out.mp4
 ```
 
-Without a key, `splice index --from <transcript.json>` still works: fetch the
+Without a key, `whisper` runs locally if it is configured (`whisper.program`,
+`whisper.model` are paths), or `splice index --from <transcript.json>` still works: fetch the
 transcript however you like and hand it over. The parsers are the same ones the
 live call uses.
 

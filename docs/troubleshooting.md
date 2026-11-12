@@ -26,6 +26,9 @@ $ splice doctor
 | `asr_rate_limited` | 2 | 429 from the provider | wait, or use the other provider |
 | `asr_over_limit` | 2 | audio longer than `--max-duration` | `--yes`, or `--max-duration 20m` |
 | `asr_unavailable` | 2 | provider 5xx or the network failed | retry; the transcript cache means a retry re-uploads nothing it already has |
+| `whisper_missing` | 2 | no whisper program found or `whisper.program` is not a file | `splice config set whisper.program /path/to/whisper-cli` |
+| `whisper_model` | 2 | `whisper.model` is unset, a name, or not a file | `splice config set whisper.model /path/to/ggml-small.bin` |
+| `whisper_failed` | 2 | the whisper binary exited non-zero | the message carries its last three stderr lines |
 | `asr_no_speech` | — (warning) | the provider found no words | check you pointed at the right audio |
 | `asr_unreadable` | 2 | the provider answered with a shape splice does not know | report it with the model id |
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
@@ -135,6 +138,10 @@ wants the final render. Run the matching `render` first.
 **The project is unreadable and nothing opens.** `splice undo`. It restores the
 last snapshot without parsing the broken file. If that fails, the previous
 document is still at `.splice/history/<seq>.json` under the `project` key.
+
+**Whisper is much slower than the hosted providers.** It is a local model: 15
+seconds of audio took 12–15 s on 4 vCPUs, 40 seconds took 2 m 29 s. Use a smaller
+`ggml-*.bin` for iteration, or the hosted providers when a network is available.
 
 **`transcribe` worked but the render has no captions.** It writes the file, it
 does not attach it. `splice caption captions.srt`, or pass `--attach` next time.

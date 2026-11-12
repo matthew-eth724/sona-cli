@@ -1024,7 +1024,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 .context("no_index: run `splice index --from <transcript>` first")?;
             let source = store.resolve(&idx_ref.source);
             let min_len = Time::parse(&min)?;
-            let idx_path = index::Index::path(&store.dir().join(".splice"), &idx_ref.audio_hash);
+            let idx_path = project_index_path(&store)?;
             let mut idx = index::Index::load(&idx_path)?;
 
             let stat = crate::cache::stat_token(&source);
@@ -1154,13 +1154,17 @@ fn dispatch(cli: Cli) -> Result<()> {
                     }
                 }
                 Err(_) => {
-                    let secret = resolved
-                        .key
-                        .as_ref()
-                        .context("asr_no_key: no key resolved for this provider")?;
-                    // No prose wrapper: report::fail_from classifies on the
-                    // leading `asr_*` code, and a context layer hides it.
-                    crate::asr::transcribe(chosen, &model, language.as_deref(), &bytes, secret)?
+                    if chosen == crate::config::Provider::Whisper {
+                        crate::asr::transcribe_whisper(&cfg, &model, language.as_deref(), &audio.path)?
+                    } else {
+                        let secret = resolved
+                            .key
+                            .as_ref()
+                            .context("asr_no_key: no key resolved for this provider")?;
+                        // No prose wrapper: report::fail_from classifies on the
+                        // leading `asr_*` code, and a context layer hides it.
+                        crate::asr::transcribe(chosen, &model, language.as_deref(), &bytes, secret)?
+                    }
                 }
             };
 
@@ -1604,11 +1608,15 @@ fn dispatch(cli: Cli) -> Result<()> {
                         let v = value.with_context(|| {
                             format!("usage: splice config set {key} <value>")
                         })?;
-                        cfg.provider_mut(provider).model = Some(v.clone());
+                        if field == "program" {
+                            cfg.provider_mut(provider).program = Some(v.clone());
+                        } else {
+                            cfg.provider_mut(provider).model = Some(v.clone());
+                        }
                         let written = config::save(&cfg)?;
                         ok(
                             json!({
-                                "provider": provider.id(), "field": "model", "action": "set",
+                                "provider": provider.id(), "field": field, "action": "set",
                                 "value": v, "path": written.display().to_string(),
                             }),
                             &[],
@@ -1625,6 +1633,15 @@ fn dispatch(cli: Cli) -> Result<()> {
                                 "set": r.key.is_some(),
                                 "source": r.key_source.map(origin_name),
                                 "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
+                            }),
+                            &[],
+                        );
+                    } else if field == "program" {
+                        let pc = cfg.provider(provider);
+                        ok(
+                            json!({
+                                "provider": provider.id(), "field": "program",
+                                "value": pc.program,
                             }),
                             &[],
                         );
@@ -1692,10 +1709,10 @@ fn dispatch(cli: Cli) -> Result<()> {
                 ConfigCmd::Unset { key } => {
                     let (provider, field) = split_config_key(&key)?;
                     let pc = cfg.provider_mut(provider);
-                    if field == "api_key" {
-                        pc.api_key = None;
-                    } else {
-                        pc.model = None;
+                    match field {
+                        "api_key" => pc.api_key = None,
+                        "model" => pc.model = None,
+                        _ => pc.program = None,
                     }
                     config::save(&cfg)?;
                     ok(json!({"provider": provider.id(), "field": field, "action": "unset"}), &[]);
@@ -1770,16 +1787,22 @@ fn dispatch(cli: Cli) -> Result<()> {
             let mut providers = serde_json::Map::new();
             for p in crate::config::Provider::all() {
                 let r = crate::config::Resolved::get(p, &cfg, None, |v| std::env::var(v).ok());
-                providers.insert(
-                    p.id().into(),
-                    json!({
-                        "key_set": r.key.is_some(),
-                        "key_source": r.key_source.map(origin_name),
-                        "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
-                        "model": r.model,
-                        "model_source": origin_name(r.model_source),
-                    }),
-                );
+                let mut entry = json!({
+                    "key_set": r.key.is_some(),
+                    "key_source": r.key_source.map(origin_name),
+                    "fingerprint": r.key.as_ref().map(|k| k.fingerprint()),
+                    "model": r.model,
+                    "model_source": origin_name(r.model_source),
+                });
+                if p == crate::config::Provider::Whisper {
+                    // whisper is a program plus a model file, so "set" is not
+                    // "ready": report both, resolved.
+                    let program = crate::asr::whisper_program(&cfg).ok();
+                    entry["program"] = json!(program.as_ref().map(|p| p.display().to_string()));
+                    entry["model_file"] = json!(std::path::Path::new(&r.model).is_file());
+                    entry["ready"] = json!(program.is_some() && std::path::Path::new(&r.model).is_file());
+                }
+                providers.insert(p.id().into(), entry);
             }
             let default_provider = crate::asr::choose(None, &cfg, |v| std::env::var(v).ok())
                 .map(|(p, _)| p.id().to_string())
@@ -1935,7 +1958,8 @@ fn split_config_key(raw: &str) -> Result<(crate::config::Provider, &'static str)
     let field = match field {
         "api_key" => "api_key",
         "model" => "model",
-        other => bail!("usage: field must be api_key or model (got `{other}`)"),
+        "program" => "program",
+        other => bail!("usage: field must be api_key, model or program (got `{other}`)"),
     };
     Ok((provider, field))
 }
@@ -1986,17 +2010,31 @@ fn kind_label(k: &Option<crate::project::TransitionKind>) -> String {
     }
 }
 
-fn project_index(store: &Store) -> Result<index::Index> {
+/// The file the project's index actually lives in.
+///
+/// `index --from` writes `.splice/index/<audio hash>.json` and `transcribe`
+/// writes `.splice/asr/<key>.json`; recomputing the path from the audio hash meant
+/// `view` could not find an index `transcribe` had just written. The ref's own path
+/// is the single answer, with the computed one as a fallback for older projects.
+fn project_index_path(store: &Store) -> Result<std::path::PathBuf> {
     let r = store
         .project
         .tracks
         .index
         .as_ref()
-        .context("no_index: run `splice index --from <transcript.json|.srt>` first")?;
-    index::Index::load(&index::Index::path(
+        .context("no_index: run `splice transcribe` or `splice index --from <file>` first")?;
+    let recorded = std::path::PathBuf::from(&r.transcript);
+    if recorded.exists() {
+        return Ok(recorded);
+    }
+    Ok(index::Index::path(
         &store.dir().join(".splice"),
         &r.audio_hash,
     ))
+}
+
+fn project_index(store: &Store) -> Result<index::Index> {
+    index::Index::load(&project_index_path(store)?)
 }
 
 /// `4:12-4:58`, `00:00:04.500-00:00:10.000`.

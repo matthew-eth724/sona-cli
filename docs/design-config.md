@@ -168,7 +168,10 @@ app, wrong for this one: no headless story, nothing to inspect in CI, and
 
 ## Open questions
 
-1. **`whisper` has no key and no endpoint** — it is an external binary. Its
+1. ~~**`whisper` has no key and no endpoint**~~ — answered: whisper is a program
+   plus a model *file*, so `ProviderConfig.program` exists and `whisper.model`
+   holds a path. `doctor` reports `ready`, because for whisper "set" is not
+   "usable". — it is an external binary. Its
    "model" is a model name passed to that binary. Does it belong in the same
    config, or is `SPLICE_WHISPER` a path plus a flag later?
 2. **Rotation.** Changing a key does not invalidate cached transcripts. Should it?
