@@ -53,6 +53,7 @@ created them, and in `inspect`.
 | `captions_missing` | the SRT path is gone | the render fails; re-`caption` |
 | `media_missing` | a source file moved | `list` shows `missing: true` |
 | `text_past_end` | an overlay extends past the timeline | the overlay is simply cut short |
+| `cache_large` | `.splice/cache` is over 1 GiB | `splice cache prune`; the cache is never authoritative, so deleting it costs a re-render at most |
 
 ## Symptoms
 

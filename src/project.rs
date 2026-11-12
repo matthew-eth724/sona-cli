@@ -1237,6 +1237,12 @@ impl Store {
         self.dir().join(".splice").join("cache")
     }
 
+    /// The cache directory for a project path, without reading the document,
+    /// so `cache info` / `cache prune --all` work on a broken project.
+    pub fn cache_dir_for(project: &Path) -> PathBuf {
+        absolute(project).parent().unwrap_or(Path::new(".")).join(".splice").join("cache")
+    }
+
     pub fn resolve(&self, rel: &str) -> PathBuf {
         self.project.resolve(rel)
     }

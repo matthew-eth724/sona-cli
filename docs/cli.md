@@ -914,6 +914,52 @@ Two behaviours worth knowing:
 
 `no_history` (exit 2) means there is nothing left to restore.
 
+## cache
+
+```
+splice cache info
+splice cache prune [--all] [--dry-run]
+```
+
+The render cache lives at `.splice/cache` and is never authoritative: deleting
+it any time is safe, and the next render rebuilds whatever was deleted. Pruning
+is therefore safe by construction and never deletes more than `rm -rf
+.splice/cache` would.
+
+One caveat: every `splice.json` in the same directory shares that single
+`.splice/cache`, so pruning from one project deletes the other's entries too.
+The cache is per directory, not per document — still safe, since nothing under
+`.splice/` is authoritative, but surprising if two projects share a folder.
+
+Cache keys embed the ffmpeg build that made them (which build, and its
+encoders/filters), so pruning under a different ffmpeg — e.g. with versus
+without `SPLICE_FFMPEG` — treats every entry as unreferenced and the next
+render rebuilds them.
+
+`cache info` prints what the cache holds — path, bytes, file count. It needs no
+readable project: a missing directory reports zero bytes and zero files.
+
+```json
+{"ok":true,"path":"/proj/.splice/cache","bytes":2456789,"files":12}
+```
+
+`cache prune` deletes cache entries the current project's plans do not
+reference. The keep set is every `plan.steps[].key` and every
+`plan.steps[].sidecar.path` file stem, across four plans: Final and Preview,
+each with and without the default loudness pass — delete by reference, never
+by age. A `--lufs`/`--true-peak`/`--lra` variant keys differently and is not
+planned, so its entry is pruned and rebuilt by the next render with those flags.
+If planning fails (missing media, broken document) it deletes nothing and fails
+with a `project_invalid`-class error (exit 2) whose fix is `splice cache prune --all`.
+
+```json
+{"ok":true,"removed":4,"freed_bytes":1234567,"kept_files":8,"kept_bytes":1222222}
+```
+
+`--dry-run` reports what would be deleted and deletes nothing; its numbers
+equal what a real prune would do, and the output adds `"dry_run":true`.
+`--all` deletes every entry, referenced or not, and needs no readable project.
+
 ## doctor
 
 ```
@@ -939,3 +985,9 @@ That replaced a bare `keys_in_env: {gemini: bool}` — a boolean could not answe
 lacks a required encoder or filter — with the install command for your OS in the
 `fix` line. Reporting `ok: true` while ffmpeg was absent used to mean the failure
 surfaced later, at render time, as a mystery.
+
+The report also carries a `cache` block — `{"path": …, "bytes": …, "files": …}`,
+or `null` when no project opens — and a `cache_large` warning in `warnings[]`
+when the cache exceeds 1 GiB, with `fix: splice cache prune`. The cache is never
+authoritative, so the warning is advice, not a limit: deleting it costs a
+re-render at most.

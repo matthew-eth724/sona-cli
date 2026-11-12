@@ -2,6 +2,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde_json::json;
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,7 +12,7 @@ use crate::graph;
 use crate::media::MediaIndex;
 use crate::project::{Anchor, AudioBed, Captions, Clip, Overlay, Store, TextOverlay, Transform};
 use crate::render;
-use crate::report::{fail_from, ok};
+use crate::report::{fail, fail_from, ok};
 use crate::time::{Rational, Time, TimeRange};
 
 #[derive(Parser)]
@@ -82,6 +83,22 @@ enum ConfigCmd {
     Path,
     /// Remove a field.
     Unset { key: String },
+}
+
+/// `splice cache info` / `splice cache prune [--all] [--dry-run]`.
+#[derive(Subcommand)]
+enum CacheCmd {
+    /// What the cache holds: path, bytes, files. Needs no readable project.
+    Info,
+    /// Delete entries the current project's plans do not reference.
+    Prune {
+        /// Delete every entry, referenced or not. Needs no readable project.
+        #[arg(long)]
+        all: bool,
+        /// Report what would be deleted, delete nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -517,6 +534,11 @@ enum Cmd {
     },
     /// Check ffmpeg, fonts and credentials.
     Doctor,
+    /// The render cache: `cache info` and `cache prune [--all] [--dry-run]`.
+    Cache {
+        #[command(subcommand)]
+        cmd: CacheCmd,
+    },
 }
 
 pub fn run() -> ! {
@@ -2310,7 +2332,23 @@ fn dispatch(cli: Cli) -> Result<()> {
                 "exists": cfg_path.as_ref().map(|p| p.exists()).unwrap_or(false),
                 "writable": cfg_path.as_ref().and_then(|p| p.parent()).map(|d| is_writable(d)),
             });
+            // The cache is never authoritative: report what it holds, or null
+            // when no project opens (a missing or broken document must not
+            // fail doctor).
+            let cache = Store::open(&path)
+                .ok()
+                .map(|store| {
+                    let dir = store.cache_dir();
+                    let (bytes, files) = crate::cache::usage(&dir);
+                    json!({
+                        "path": dir.display().to_string(),
+                        "bytes": bytes,
+                        "files": files,
+                    })
+                });
+
             let report = json!({
+                "cache": cache,
                 "ffmpeg": if caps.version.is_empty() { json!(null) } else { json!(caps.version) },
                 "ffmpeg_path": ffmpeg_path.display().to_string(),
                 "ffmpeg_source": match ffmpeg_source {
@@ -2360,10 +2398,171 @@ fn dispatch(cli: Cli) -> Result<()> {
                     .with_fix("set SPLICE_FONT=/path/to/font.ttf"),
                 );
             }
+            // A full cache only ever costs a re-render: warn, never block.
+            if let Some(c) = &cache {
+                if c.get("bytes").and_then(|b| b.as_u64()).unwrap_or(0) > crate::cache::WARN_BYTES {
+                    warnings.push(
+                        crate::report::Diagnostic::new(
+                            "cache_large",
+                            "cache",
+                            format!(
+                                "the cache at {} holds {} bytes; `.splice/` is never authoritative, so deleting it is safe and the next render rebuilds it",
+                                c.get("path").and_then(|p| p.as_str()).unwrap_or(""),
+                                c.get("bytes").and_then(|b| b.as_u64()).unwrap_or(0),
+                            ),
+                        )
+                        .with_fix("splice cache prune"),
+                    );
+                }
+            }
             ok(report, &warnings);
             Ok(())
         }
+        Cmd::Cache { cmd } => match cmd {
+            CacheCmd::Info => {
+                let dir = Store::cache_dir_for(&path);
+                let (bytes, files) = crate::cache::usage(&dir);
+                ok(
+                    json!({
+                        "path": dir.display().to_string(),
+                        "bytes": bytes,
+                        "files": files,
+                    }),
+                    &[],
+                );
+                Ok(())
+            }
+            CacheCmd::Prune { all, dry_run } => {
+                if all {
+                    // `.splice/` is never authoritative: deleting every entry
+                    // is always safe, and it needs no readable project.
+                    // `read_dir` enumerates every directory entry including
+                    // symlinks and dangling links; `remove_file` unlinks a
+                    // link itself without following it, so nothing under the
+                    // cache can escape.
+                    let dir = Store::cache_dir_for(&path);
+                    let mut removed: u64 = 0;
+                    let mut freed_bytes: u64 = 0;
+                    if let Ok(entries) = std::fs::read_dir(&dir) {
+                        for entry in entries.flatten() {
+                            if let Ok(m) = std::fs::metadata(&entry.path()) {
+                                freed_bytes += m.len();
+                            }
+                            removed += 1;
+                            if !dry_run {
+                                let _ = std::fs::remove_file(entry.path());
+                            }
+                        }
+                    }
+                    let mut payload = json!({
+                        "removed": removed,
+                        "freed_bytes": freed_bytes,
+                        "kept_files": 0,
+                        "kept_bytes": 0,
+                    });
+                    if dry_run {
+                        payload.as_object_mut().unwrap().insert("dry_run".into(), json!(true));
+                    }
+                    ok(payload, &[]);
+                    Ok(())
+                } else {
+                    // Planning must succeed before anything is deleted: a
+                    // broken document or missing media deletes nothing and
+                    // fails with a project-class error pointing at --all.
+                    //
+                    // The keep set covers the plain Final and Preview plans
+                    // and their default-loudnorm variants, since the cache key
+                    // embeds the loudness clause. A `render --loudnorm` entry
+                    // must survive pruning just like the plain one.
+                    let store = match Store::open(&path) {
+                        Ok(store) => store,
+                        Err(e) => {
+                            fail(
+                                "project_invalid",
+                                format!("{} is not a readable project: {e}", path.display()),
+                                Some("splice cache prune --all".into()),
+                            )
+                        }
+                    };
+                    let mut media = MediaIndex::default();
+                    let out = PathBuf::from("out.mp4");
+                    let default_loudness = graph::Loudness::DEFAULT;
+                    let plans = [
+                        ("final", graph::plan(&store, &mut media, &out, graph::Profile::Final, None)),
+                        ("preview", graph::plan(&store, &mut media, &out, graph::Profile::Preview, None)),
+                        ("final+loudnorm", graph::plan(&store, &mut media, &out, graph::Profile::Final, Some(default_loudness))),
+                        ("preview+loudnorm", graph::plan(&store, &mut media, &out, graph::Profile::Preview, Some(default_loudness))),
+                    ];
+                    let mut keep = HashSet::new();
+                    for (name, p) in plans {
+                        match p {
+                            Ok(plan) => keep.extend(cache_keep_set(&[&plan])),
+                            Err(e) => {
+                                fail(
+                                    "project_invalid",
+                                    format!("planning {name} failed, nothing deleted: {e}"),
+                                    Some("splice cache prune --all".into()),
+                                )
+                            }
+                        }
+                    }
+                    let dir = store.cache_dir();
+                    let mut removed: u64 = 0;
+                    let mut freed_bytes: u64 = 0;
+                    let mut kept_files: u64 = 0;
+                    let mut kept_bytes: u64 = 0;
+                    for entry in crate::cache::files(&dir) {
+                        let stem = entry.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                        if keep.contains(stem) {
+                            if let Ok(m) = std::fs::metadata(&entry) {
+                                kept_files += 1;
+                                kept_bytes += m.len();
+                            }
+                            continue;
+                        }
+                        if let Ok(m) = std::fs::metadata(&entry) {
+                            freed_bytes += m.len();
+                        }
+                        removed += 1;
+                        if !dry_run {
+                            let _ = std::fs::remove_file(&entry);
+                        }
+                    }
+                    let mut payload = json!({
+                        "removed": removed,
+                        "freed_bytes": freed_bytes,
+                        "kept_files": kept_files,
+                        "kept_bytes": kept_bytes,
+                    });
+                    if dry_run {
+                        payload.as_object_mut().unwrap().insert("dry_run".into(), json!(true));
+                    }
+                    ok(payload, &[]);
+                    Ok(())
+                }
+            }
+        }
     }
+}
+
+/// The cache entries the current plans still reference: every step key and
+/// every sidecar stem, across every plan passed in. Delete by reference, never
+/// by age. Pure: it does not touch the disk, so it can be unit-tested without
+/// ffmpeg; planning (which does) is the caller's job, and a failed plan must
+/// delete nothing.
+fn cache_keep_set(plans: &[&graph::RenderPlan]) -> HashSet<String> {
+    let mut keep = HashSet::new();
+    for plan in plans {
+        for step in &plan.steps {
+            keep.insert(step.key.clone());
+            if let Some(side) = &step.sidecar {
+                if let Some(stem) = side.path.file_stem().and_then(|s| s.to_str()) {
+                    keep.insert(stem.to_string());
+                }
+            }
+        }
+    }
+    keep
 }
 
 /// Ends a mutation: duration, diagnostics, and a save unless this was a dry run.
@@ -2660,5 +2859,59 @@ mod tests {
     fn progress_for_no_progress_silences_even_on_a_tty() {
         assert!(!progress_for(false, true, None, true).steps());
         assert!(!progress_for(false, true, None, true).ticks());
+    }
+
+    #[test]
+    fn cache_keep_set_is_every_step_key_and_sidecar_stem() {
+        let sidecar = |key: &str| graph::Sidecar {
+            path: PathBuf::from(format!("/cache/{key}.ass")),
+            body: "x".into(),
+        };
+        let step = |key: &str, side: Option<graph::Sidecar>| graph::Step {
+            label: "s".into(),
+            key: key.into(),
+            invocation: crate::ffmpeg::Invocation::new(),
+            sidecar: side,
+            output: PathBuf::new(),
+        };
+        let plan = |steps: Vec<graph::Step>| graph::RenderPlan {
+            steps,
+            out: PathBuf::new(),
+            warnings: Vec::new(),
+            duration: Time::ZERO,
+        };
+
+        let final_plan = plan(vec![step("k1", None), step("k2", Some(sidecar("k2")))]);
+        let preview_plan = plan(vec![step("k3", None)]);
+        let keep = cache_keep_set(&[&final_plan, &preview_plan]);
+        assert!(keep.contains("k1"));
+        assert!(keep.contains("k2"));
+        assert!(keep.contains("k3"));
+        assert!(!keep.contains("stale"));
+        assert_eq!(keep.len(), 3);
+
+        let empty = plan(Vec::new());
+        assert!(cache_keep_set(&[&empty, &empty]).is_empty());
+    }
+
+    /// Pin: clap's `--loudnorm` defaults must match `Loudness::DEFAULT`, or
+    /// `cache prune` stops keeping the loudnorm entry and the round-1 defect
+    /// returns with every test green.
+    #[test]
+    fn loudnorm_defaults_match_loudness_default() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "splice",
+            "render",
+            "--loudnorm",
+        ])
+        .expect("render --loudnorm must parse");
+        if let Cmd::Render { loudnorm, lufs, true_peak, lra, .. } = cli.cmd {
+            let l = loudness_arg(loudnorm, lufs, true_peak, lra)
+                .expect("--loudnorm must yield a loudness");
+            assert_eq!(l, graph::Loudness::DEFAULT);
+        } else {
+            panic!("expected Cmd::Render");
+        }
     }
 }

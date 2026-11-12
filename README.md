@@ -127,7 +127,7 @@ required encoder, rather than letting you find out at render time.
 | sound | `audio` `duck` `caption` |
 | read | `transcribe` `index` `view` `find` `scenes` |
 | tighten | `cut` |
-| output | `plan` `render` `frames` |
+| output | `plan` `render` `frames` `cache` |
 | safety | `history` `undo` |
 
 Full reference: [docs/cli.md](docs/cli.md).
