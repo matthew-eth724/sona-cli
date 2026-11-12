@@ -2232,7 +2232,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 Some((origin, path)) => (json!(path), json!(origin)),
                 None => (json!(null), json!(null)),
             };
-            let ffprobe = std::process::Command::new("ffprobe")
+            let ffprobe = std::process::Command::new(crate::ffmpeg::ffprobe())
                 .arg("-version")
                 .output()
                 .map(|o| o.status.success())

@@ -276,19 +276,39 @@ five filters this tool emits.
    It also creates a second way to run ffmpeg; the design keeps it because the
    alternative is a tool that cannot encode a long master on a Mac.
 
-## What the build recipe still needs
+## The recipe, working
 
-A pristine slim build now configures and compiles but fails at link time:
-`h2645_sei.c` calls `ff_aom_uninit_film_grain_params` and the object defining it is
-not linked when AV1 and libaom are disabled. This is ffmpeg-internal build
-archaeology — resolved by enabling or disabling libaom coherently — and it needs a
-build loop rather than a one-shot guess.
+A slim static ffmpeg now builds, links and runs, and the whole tool works on it
+with no ffmpeg anywhere on `PATH`:
 
-That is the argument for the maintained-prebuilt shape, not against bundling: the
-resolution order above is identical whichever binary sits in that directory, so
-shipping a prebuilt full ffmpeg first and a slim one later is one artifact swap.
+| | |
+| --- | --- |
+| `ffmpeg` | 14 MB (5.4 MB gzipped) |
+| `ffprobe` | 13 MB (5.4 MB gzipped) |
+| has | libx264, libass + harfbuzz, hevc/h264 decoders, zoompan, colorkey, lut3d |
+| has not | drawtext — which nothing needs any more |
 
-## Next implementation step
+Two configure findings that cost real time and would block any future attempt:
+
+1. **H.264 alone does not link.** `OBJS-$(CONFIG_H264_SEI)` adds `h2645_sei.o`,
+   which calls `ff_aom_uninit_film_grain_params`, but only the *HEVC* line adds
+   `aom_film_grain.o`. An H.264-only build therefore references a symbol it never
+   links. Enabling `hevc` fixes it, and we want HEVC anyway.
+2. **`ass`/`subtitles` need ffmpeg's subtitle *decoders*.** libass renders the
+   document, but the filter still opens the file through libavformat: without
+   `ass`/`subrip`/`webvtt` decoders it fails with "Decoder not found". Enable the
+   decoders, not just the library.
+
+Verified end to end with `PATH` containing only `fc-match`: `doctor` reports
+`source: beside the binary` and the sibling `ffprobe`, a project with a title and
+Arabic/Hindi captions renders, and `frames` writes a still. Against the same cut
+without overlays the title band differs by 14.1 dB and the caption band by 21.2 dB.
+
+One bug this exposed in our own code: `doctor` still probed a literal `"ffprobe"`
+instead of the resolved one, so a bundled probe was invisible to it — the exact
+class of miss the resolution order exists to prevent.
+
+## Next implementation step## Next implementation step
 
 Prove the two numbers the design rests on, before writing packaging code:
 
