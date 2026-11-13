@@ -3,13 +3,21 @@
   "theme": "mint",
   "name": "splice",
   "description": "A video-editing CLI for AI agents: one JSON document in, ffmpeg out.",
-  "colors": { "primary": "#5B8DEF", "light": "#8FB2F5", "dark": "#3A6BD0" },
+  "colors": {
+    "primary": "#5B8DEF",
+    "light": "#8FB2F5",
+    "dark": "#3A6BD0"
+  },
   "navigation": {
     "groups": [
       {
         "group": "Get started",
         "icon": "rocket",
-        "pages": ["index", "quickstart", "guides/installation"]
+        "pages": [
+          "index",
+          "quickstart",
+          "guides/installation"
+        ]
       },
       {
         "group": "Guides",
@@ -34,6 +42,28 @@
       }
     ]
   },
-  "navbar": { "links": [{ "label": "GitHub", "href": "https://github.com/matthew-eth724/splice-cli" }] },
-  "footer": { "socials": { "github": "https://github.com/matthew-eth724/splice-cli" } }
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/matthew-eth724/splice-cli"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/matthew-eth724/splice-cli"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "claude",
+      "chatgpt",
+      "cursor",
+      "vscode",
+      "view"
+    ],
+    "display": "header"
+  }
 }
