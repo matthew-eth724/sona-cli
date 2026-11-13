@@ -1,0 +1,56 @@
+name: promote
+
+# Move a published version to a dist-tag, normally `latest`. Releases publish under
+# `next`; this is the deliberate second step, so "what most people install" only
+# changes when someone asks for it. Run from the Actions tab, or:
+#   gh workflow run promote.yml -f version=0.1.5
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "published version to promote, e.g. 0.1.5"
+        required: true
+      tag:
+        description: "dist-tag to move"
+        required: false
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: the version must already be published
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm view "splice-cli@${{ inputs.version }}" version >/dev/null || {
+            echo "splice-cli@${{ inputs.version }} is not on the registry; publish it first" >&2
+            exit 1
+          }
+      - name: every platform package must be there too, or latest points at nothing
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64 windows-x64; do
+            npm view "splice-cli-$p@${{ inputs.version }}" version >/dev/null || {
+              echo "splice-cli-$p@${{ inputs.version }} is missing" >&2
+              exit 1
+            }
+          done
+      - name: move the tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm dist-tag add "splice-cli@${{ inputs.version }}" "${{ inputs.tag }}"
+          echo "dist-tags now:"
+          npm dist-tag ls splice-cli
