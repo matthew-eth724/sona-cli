@@ -8,7 +8,9 @@
 //   node tools/ci/verify.mjs all
 //
 // SPLICE overrides the binary; WHISPER_PROGRAM/WHISPER_MODEL point at a whisper.cpp
-// build. Exit 0 means every assertion held; a failure prints the JSON it saw.
+// build. VERIFY_REQUIRE_LIBASS=1 makes an ffmpeg_incapable doctor a hard FAIL
+// instead of the degraded path. Exit 0 means every assertion held; a failure prints
+// the JSON it saw.
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -90,6 +92,14 @@ function platformChecks() {
   // it gets its own contract instead of failing the four capability assertions.
   const source = doc.ffmpeg_source ?? doc.report?.ffmpeg_source;
   if (doc.ok !== true && doc.error?.code === "ffmpeg_incapable") {
+    if (process.env.VERIFY_REQUIRE_LIBASS === "1") {
+      check("doctor sees a libass-capable ffmpeg (VERIFY_REQUIRE_LIBASS=1)", false,
+        "VERIFY_REQUIRE_LIBASS=1 was set but this ffmpeg cannot burn subtitles: " +
+        "fetch the pinned libass-capable ffmpeg (eugeneware/ffmpeg-static b6.1.1), " +
+        "put it first on PATH ahead of the system bottle, and if a font burn still " +
+        "fails, pass an explicit font to splice text/caption.");
+      return;
+    }
     degradedChecks(doc, source);
     return;
   }

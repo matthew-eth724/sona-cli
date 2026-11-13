@@ -23,8 +23,10 @@ jobs:
             name: linux-x64
           - os: macos-15
             name: macos-arm64
+            arch: arm64
           - os: macos-15-intel
             name: macos-x64
+            arch: x64
           - os: windows-2025
             name: windows-x64
     runs-on: ${{ matrix.os }}
@@ -36,12 +38,44 @@ jobs:
       - name: install ffmpeg (linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: install ffmpeg (macos)
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
       - name: install ffmpeg (windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y --no-progress
+
+      # macOS: the runner's Homebrew ffmpeg 9.0.2 ships without the `ass`/
+      # `subtitles` filter, so caption and title burning silently degrades
+      # there. Instead, fetch a pinned static libass-capable build
+      # (ffmpeg-static b6.1.1); the four sha256 pins are hard-coded in
+      # tools/ci/fetch-ffmpeg.sh, so no download is trusted blindly.
+      # Rejected routes: BtbN (no macOS builds); evermeet (API 410/403);
+      # osxexperts (per-tool zips, Intel lags); homebrew-ffmpeg tap (source
+      # build, tens of minutes); conda-forge (solver and ~40 deps).
+      - name: cache fetched ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/splice-ffmpeg
+          key: ffmpeg-static-b6.1.1-${{ matrix.arch }}-a90e3db6
+      - name: fetch libass-capable ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: tools/ci/fetch-ffmpeg.sh "${{ matrix.arch }}" "$HOME/.cache/splice-ffmpeg/${{ matrix.arch }}"
+      - name: put fetched ffmpeg first on PATH (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          FFMPEG_DIR="$HOME/.cache/splice-ffmpeg/${{ matrix.arch }}"
+          export PATH="$FFMPEG_DIR:$PATH"
+          echo "$FFMPEG_DIR" >> "$GITHUB_PATH"
+          echo "SPLICE_FFMPEG=$FFMPEG_DIR" >> "$GITHUB_ENV"
+          case "$(command -v ffmpeg)" in
+            "$FFMPEG_DIR"/*) : ;;
+            *) echo "ffmpeg resolved to $(command -v ffmpeg), not inside $FFMPEG_DIR" >&2; exit 1 ;;
+          esac
+      - name: show ffmpeg filters (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ffmpeg -filters | grep -E ' (ass|subtitles) '
 
       - run: cargo build --release
 
@@ -57,6 +91,8 @@ jobs:
 
       - name: drive the binary
         shell: bash
+        env:
+          VERIFY_REQUIRE_LIBASS: ${{ runner.os == 'macOS' && '1' || '' }}
         run: |
           SPLICE=$([ "$RUNNER_OS" = "Windows" ] && echo "target/release/splice.exe" || echo "target/release/splice")
           SPLICE="$SPLICE" node tools/ci/verify.mjs platform
