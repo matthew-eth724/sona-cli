@@ -1,6 +1,6 @@
 {
   "name": "splice-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A video editing CLI for AI agents: one JSON document in, ffmpeg out. Requires ffmpeg on PATH.",
   "keywords": [
     "video",
@@ -33,11 +33,11 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "splice-cli-linux-x64": "0.1.4",
-    "splice-cli-linux-arm64": "0.1.4",
-    "splice-cli-darwin-x64": "0.1.4",
-    "splice-cli-darwin-arm64": "0.1.4",
-    "splice-cli-windows-x64": "0.1.4"
+    "splice-cli-linux-x64": "0.1.5",
+    "splice-cli-linux-arm64": "0.1.5",
+    "splice-cli-darwin-x64": "0.1.5",
+    "splice-cli-darwin-arm64": "0.1.5",
+    "splice-cli-windows-x64": "0.1.5"
   },
   "scripts": {
     "postinstall": "node postinstall.mjs"

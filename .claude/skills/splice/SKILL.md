@@ -45,6 +45,14 @@ captions work), verifies its sha256, and puts it ahead of `PATH`. Then
 `doctor` reports `ffmpeg_source: "splice cache"`. This matters most on macOS,
 where Homebrew's ffmpeg can be built without libass.
 
+It is about 56 MB to download and 160 MB on disk, it needs network once, and it is
+explicit — nothing is fetched behind your back. It arrived in 0.1.5; on an older
+build the command does not exist, so fall back to `SPLICE_FFMPEG` or a package
+manager build that includes libass. To go back to the system build, delete
+`~/.cache/splice/ffmpeg` (Linux), `~/Library/Caches/splice/ffmpeg` (macOS) or
+`%LOCALAPPDATA%\splice\ffmpeg` (Windows), or point `SPLICE_FFMPEG` at the binary you
+want.
+
 `ffmpeg_source` tells you which binary wins: `SPLICE_FFMPEG`, then a copy beside
 the `splice` binary, then the splice cache, then `PATH`. `doctor` reports the
 path and which rule chose it.
