@@ -17,6 +17,7 @@ pub struct Invocation {
 pub enum ProgramSource {
     Env,
     BesideBinary,
+    Cache,
     Path,
 }
 
@@ -57,6 +58,14 @@ pub fn program(name: &str) -> (PathBuf, ProgramSource) {
             if candidate.is_file() {
                 return (candidate, ProgramSource::BesideBinary);
             }
+        }
+    }
+    // A copy fetched by `splice ffmpeg install` outranks PATH: a system build that
+    // cannot burn subtitles is exactly what that command exists to replace.
+    if let Some(dir) = crate::ffmpeg_install::cache_dir() {
+        let candidate = dir.join(&exe_name);
+        if candidate.is_file() {
+            return (candidate, ProgramSource::Cache);
         }
     }
     (PathBuf::from(exe_name), ProgramSource::Path)

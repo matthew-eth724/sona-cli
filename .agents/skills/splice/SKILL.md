@@ -39,8 +39,15 @@ are true:
 | `font` (non-null) | text; `font_source` says where it came from |
 | `providers[]`, `default_provider` | `transcribe`; `key_set:false` means no key |
 
+If `doctor` reports `ffmpeg_missing` or `ffmpeg_incapable`, do not go hunting:
+`splice ffmpeg install` fetches a pinned static build (with libass, so titles and
+captions work), verifies its sha256, and puts it ahead of `PATH`. Then
+`doctor` reports `ffmpeg_source: "splice cache"`. This matters most on macOS,
+where Homebrew's ffmpeg can be built without libass.
+
 `ffmpeg_source` tells you which binary wins: `SPLICE_FFMPEG`, then a copy beside
-the `splice` binary, then `PATH`.
+the `splice` binary, then the splice cache, then `PATH`. `doctor` reports the
+path and which rule chose it.
 
 ## The loop
 

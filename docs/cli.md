@@ -941,6 +941,62 @@ Two behaviours worth knowing:
 
 `no_history` (exit 2) means there is nothing left to restore.
 
+## ffmpeg
+
+```
+splice ffmpeg install
+```
+
+Downloads and pins a static ffmpeg+ffprobe build (eugeneware/ffmpeg-static b6.1.1,
+verified by sha256 of the uncompressed binaries) into the user cache, so `splice`
+can run without a system ffmpeg. It is explicit by design: nothing is downloaded
+behind your back, and `SPLICE_FFMPEG` still wins if you have your own build.
+
+There are no flags today.
+
+On success stdout is one JSON object:
+
+```json
+{"ok":true,"already_installed":false,"dir":"…","ffmpeg_sha256":"…",
+ "ffprobe_sha256":"…","installed":true,"platform":"linux-x64"}
+```
+
+`dir` is the cache directory it installed into (or found), and `platform` is the
+OS/arch of the pinned build. Progress lines go to stderr.
+
+A second run is a no-op:
+
+```json
+{"ok":true,"already_installed":true,"installed":false,"dir":"…","platform":"…",…}
+```
+
+Installs to:
+
+- Linux: `~/.cache/splice/ffmpeg`
+- macOS: `~/Library/Caches/splice/ffmpeg`
+- Windows: `%LOCALAPPDATA%\splice\ffmpeg`
+
+Lookup order, so a bundled copy can win without touching `PATH`:
+
+1. `SPLICE_FFMPEG` — a directory holding both, or a path whose sibling `ffprobe`
+   is preferred
+2. beside the `splice` binary
+3. the splice cache (this command installs there)
+4. `PATH`
+
+To go back to the system build, delete that directory (or set `SPLICE_FFMPEG` to the binary you want); there is no `ffmpeg uninstall`.
+
+On failure it exits 4 with one of:
+
+| code | meaning |
+| --- | --- |
+| `ffmpeg_install_network` | the download failed |
+| `ffmpeg_install_io` | a local filesystem operation failed: cache unwritable, path is a file, disk full |
+| `ffmpeg_install_hash` | the download did not match its pinned sha256 |
+| `ffmpeg_install_unsupported` | no pinned build for this OS/arch |
+
+`splice doctor` reports `ffmpeg_source: "splice cache"` when the cache build won.
+
 ## cache
 
 ```

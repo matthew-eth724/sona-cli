@@ -101,6 +101,13 @@ enum CacheCmd {
     },
 }
 
+/// `splice ffmpeg install`: download a pinned, hash-checked ffmpeg and ffprobe pair into the splice cache.
+#[derive(Subcommand)]
+enum FfmpegCmd {
+    /// Download a pinned, hash-checked ffmpeg and ffprobe into the splice cache.
+    Install,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Create a project file.
@@ -538,6 +545,11 @@ enum Cmd {
     Cache {
         #[command(subcommand)]
         cmd: CacheCmd,
+    },
+    /// Fetch a verified static ffmpeg instead of using the system one.
+    Ffmpeg {
+        #[command(subcommand)]
+        cmd: FfmpegCmd,
     },
 }
 
@@ -2422,6 +2434,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 "ffmpeg_source": match ffmpeg_source {
                     crate::ffmpeg::ProgramSource::Env => "SPLICE_FFMPEG",
                     crate::ffmpeg::ProgramSource::BesideBinary => "beside the binary",
+                    crate::ffmpeg::ProgramSource::Cache => "splice cache",
                     crate::ffmpeg::ProgramSource::Path => "PATH",
                 },
                 "ffprobe": ffprobe,
@@ -2442,7 +2455,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::report::fail_with(
                     "ffmpeg_missing",
                     format!("{what} is not on PATH"),
-                    Some(install_ffmpeg_hint().into()),
+                    Some(install_ffmpeg_hint()),
                     json!({ "report": report }),
                 );
             }
@@ -2450,7 +2463,7 @@ fn dispatch(cli: Cli) -> Result<()> {
                 crate::report::fail_with(
                     "ffmpeg_incapable",
                     format!("this ffmpeg lacks {}", caps.missing().join(", ")),
-                    Some(install_ffmpeg_hint().into()),
+                    Some(install_ffmpeg_hint()),
                     json!({ "report": report }),
                 );
             }
@@ -2608,6 +2621,65 @@ fn dispatch(cli: Cli) -> Result<()> {
                     ok(payload, &[]);
                     Ok(())
                 }
+            }
+        }
+        Cmd::Ffmpeg { cmd } => match cmd {
+            FfmpegCmd::Install => {
+                let platform = crate::ffmpeg_install::platform().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "ffmpeg_install_unsupported: no pinned build for {} {}",
+                        std::env::consts::OS,
+                        std::env::consts::ARCH
+                    )
+                })?;
+                let dir = crate::ffmpeg_install::cache_dir().ok_or_else(|| {
+                    anyhow::anyhow!("ffmpeg_install_unsupported: no cache directory for this OS")
+                })?;
+                let (_, ffmpeg_pin, ffprobe_pin, ffmpeg_asset, ffprobe_asset) =
+                    crate::ffmpeg_install::PINS
+                        .iter()
+                        .find(|(id, _, _, _, _)| *id == platform.id)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "ffmpeg_install_unsupported: {} is not pinned",
+                                platform.id
+                            )
+                        })?;
+                let base = crate::ffmpeg_install::BASE_URL;
+                let mut progress = |line: &str| eprintln!("{line}");
+                let out = crate::ffmpeg_install::install(
+                    &platform,
+                    &dir,
+                    &format!("{base}/{ffmpeg_asset}"),
+                    &format!("{base}/{ffprobe_asset}"),
+                    ffmpeg_pin,
+                    ffprobe_pin,
+                    &mut progress,
+                )
+                .map_err(|e| {
+                    let text = format!("{e}");
+                    let code = if text.contains("sha256 mismatch") {
+                        "ffmpeg_install_hash"
+                    } else if e.downcast_ref::<std::io::Error>().is_some() {
+                        // ENOSPC, EACCES, a path that is a file: not the network.
+                        "ffmpeg_install_io"
+                    } else {
+                        "ffmpeg_install_network"
+                    };
+                    anyhow::anyhow!("{code}: {text}")
+                })?;
+                ok(
+                    json!({
+                        "already_installed": out.already_installed,
+                        "dir": out.dir.display().to_string(),
+                        "ffmpeg_sha256": out.ffmpeg_sha256,
+                        "ffprobe_sha256": out.ffprobe_sha256,
+                        "installed": out.installed,
+                        "platform": out.platform,
+                    }),
+                    &[],
+                );
+                Ok(())
             }
         }
     }
@@ -2788,14 +2860,18 @@ fn is_writable(dir: &std::path::Path) -> bool {
     }
 }
 
-fn install_ffmpeg_hint() -> &'static str {
-    if cfg!(windows) {
-        "winget install Gyan.FFmpeg   (then open a new terminal)"
+fn install_ffmpeg_hint() -> String {
+    let fallback = if cfg!(windows) {
+        "winget install Gyan.FFmpeg"
     } else if cfg!(target_os = "macos") {
         "brew install ffmpeg"
     } else {
-        "sudo apt install ffmpeg   (needs libx264, libass, freetype)"
-    }
+        "sudo apt install ffmpeg"
+    };
+    format!(
+        "splice ffmpeg install   (fetches a verified static ffmpeg; or: {})",
+        fallback
+    )
 }
 
 fn loudness_arg(on: bool, lufs: f32, tp: f32, lra: f32) -> Option<graph::Loudness> {

@@ -12,6 +12,7 @@ agent actually needs; `splice <verb> --help` is authoritative for the rest.
 | --- | --- | --- |
 | `init` | Create `splice.json` | `--size WxH`, `--fps N` |
 | `doctor` | ffmpeg, fonts, keys; exits 4 if unusable | — |
+| `ffmpeg install` | fetch a verified static ffmpeg+ffprobe into the user cache | no flags; second run is a no-op |
 | `config set <provider>.<field>` | per-user config, never in the project | `--stdin`, `--from-env` |
 | `config list` | which keys are set, from where, and the model | — |
 

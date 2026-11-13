@@ -10,6 +10,9 @@ doctor → inspect → edit → render → frames → look
 
 1. `splice doctor` once per machine. If `libx264`, `libass` or `drawtext` is false,
    or `font` is null, stop: every render will fail on a filter, not on your edit.
+   If ffmpeg is missing or lacks libass, run `splice ffmpeg install` — it fetches
+   a verified build into the user cache, and the next `doctor` reports
+   `ffmpeg_source: "splice cache"`.
 2. `splice inspect` before editing. It is cheap and returns `duration`, the clip
    list and `warnings[]`.
 3. Make the smallest edit that expresses the change. One command, one concept.

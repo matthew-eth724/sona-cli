@@ -96,6 +96,17 @@ $ winget install Gyan.FFmpeg     # Windows, then open a new terminal
 $ ffmpeg -filters | grep -w subtitles   # must print a line: that is libass
 ```
 
+If your system ffmpeg turns out to be missing libass, or you would rather not
+depend on it at all:
+
+```console
+$ splice ffmpeg install        # verified static build, ~56 MB download, ~160 MB on disk, into the user cache
+$ splice doctor                # ffmpeg_source: "splice cache"
+```
+
+It is explicit, never a postinstall: nothing is downloaded behind your back, and
+`SPLICE_FFMPEG` still wins if you have your own build.
+
 `brew install ffmpeg` can install a build **without libass** — GitHub's macOS
 runners do exactly that (ffmpeg 9.0.2, no `ass` or `subtitles` filter), and a
 distro bottle can too. Titles and captions are drawn by libass, so on such a

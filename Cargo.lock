@@ -448,6 +448,7 @@ dependencies = [
  "anyhow",
  "base64",
  "clap",
+ "flate2",
  "serde",
  "serde_json",
  "sha2",

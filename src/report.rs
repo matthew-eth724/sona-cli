@@ -97,6 +97,10 @@ pub fn default_fix(code: &str) -> Option<String> {
         "whisper_missing" => "splice config set whisper.program /path/to/whisper-cli",
         "whisper_model" => "splice config set whisper.model /path/to/ggml-small.bin",
         "whisper_failed" => "splice config set whisper.program <path>",
+        "ffmpeg_install_network" => "check the network, then: splice ffmpeg install",
+        "ffmpeg_install_hash" => "the download did not match its pinned hash; try again: splice ffmpeg install",
+        "ffmpeg_install_io" => "check write access to the cache directory, then: splice ffmpeg install",
+        "ffmpeg_install_unsupported" => "install ffmpeg with your system package manager, or set SPLICE_FFMPEG",
         _ => return None,
     };
     Some(fix.to_string())

@@ -21,8 +21,12 @@ codes classify for a caller that only sees the status.
 | `clip_empty` | 2 | a trim left nothing | check the reported `duration` |
 | `media_missing` | 3 | a stored `source` does not resolve against the project directory | `splice list` |
 | `unreadable` | 3 | a file exists but ffprobe cannot read it | replace the file |
-| `ffmpeg_missing` | 4 | no ffmpeg found: neither `SPLICE_FFMPEG`, nor beside the binary, nor on `PATH` | install ffmpeg |
-| `ffmpeg_incapable` | 4 | ffmpeg lacks `libx264` or `libass` | use a fuller build |
+| `ffmpeg_missing` | 4 | no ffmpeg found: neither `SPLICE_FFMPEG`, nor beside the binary, nor in the splice cache, nor on `PATH` | `splice ffmpeg install` |
+| `ffmpeg_incapable` | 4 | ffmpeg lacks `libx264` or `libass` | `splice ffmpeg install` |
+| `ffmpeg_install_network` | 4 | the download failed | check the network, then `splice ffmpeg install` |
+| `ffmpeg_install_io` | 4 | a local filesystem operation failed: cache unwritable, path is a file, disk full | check write access to the cache directory, then `splice ffmpeg install` |
+| `ffmpeg_install_hash` | 4 | the download did not match its pinned sha256 | retry; do not trust a mirror that keeps failing |
+| `ffmpeg_install_unsupported` | 4 | no pinned build for this OS/arch | system package manager, or set `SPLICE_FFMPEG` |
 | `ffmpeg_failed` | 4 | a render step exited non-zero; `message` carries its last stderr lines | `splice plan` shows the argv |
 | `no_font` | 2 | no usable font for text or captions | install a font, then `splice doctor` |
 | `nothing_rendered` | 2 | `frames` before any render for that profile | `splice render` (or `--preview`) |

@@ -37,8 +37,12 @@ $ splice doctor
 | `no_history` | 2 | nothing left to undo, or `.splice/history/` was deleted | `splice history` |
 | `no_index` | 2 | `view`/`find` ran without an index, or `.splice/index/` was deleted | `splice index --from <transcript>` |
 | `no_font` | 2 | no usable font: no `fc-match`, no bundled-path font | `set SPLICE_FONT=/path/to/font.ttf`, or install one; `doctor` shows where it looked |
-| `ffmpeg_missing` | 4 | `ffmpeg` or `ffprobe` is not on `PATH` | the `fix` line names the install command for your OS |
-| `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264` or `libass` | check it yourself: `ffmpeg -filters \| grep -w subtitles` (libass) and `ffmpeg -encoders \| grep -w libx264`; if either is empty, install a build that has it. Homebrew on macOS can install an ffmpeg without libass |
+| `ffmpeg_missing` | 4 | `ffmpeg` or `ffprobe` is not on `PATH` | `splice ffmpeg install` — or your OS package manager if you prefer a system build |
+| `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264` or `libass` | `splice ffmpeg install`, or check it yourself: `ffmpeg -filters \| grep -w subtitles` (libass) and `ffmpeg -encoders \| grep -w libx264`; if either is empty, install a build that has it. Homebrew on macOS can install an ffmpeg without libass |
+| `ffmpeg_install_network` | 4 | the download failed | check the network, then `splice ffmpeg install` |
+| `ffmpeg_install_io` | 4 | a local filesystem operation failed: cache unwritable, path is a file, disk full | check write access to the cache directory, then `splice ffmpeg install` |
+| `ffmpeg_install_hash` | 4 | the download did not match its pinned sha256 | retry; if it persists, do not trust that mirror |
+| `ffmpeg_install_unsupported` | 4 | no pinned build for this OS/arch | use the system package manager, or `SPLICE_FFMPEG` |
 
 ## Warnings
 
