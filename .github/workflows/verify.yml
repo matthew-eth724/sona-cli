@@ -126,32 +126,43 @@ jobs:
           WHISPER_MODEL="$HOME/.cache/splice-verify/ggml-small.en.bin" \
           node tools/ci/verify.mjs transcribe
 
-  # A hosted provider, only when asked: real TLS, real API shape, real key. Skipped
-  # on every push and PR so a fork cannot spend the secret, and silently skipped when
-  # the secret is absent rather than failing every run of a fork.
+  # A hosted provider, only when asked: real TLS, real API shape, real key. Skipped on
+  # every push and PR so a fork cannot spend the secret, and skipped when the secret is
+  # absent rather than failing a fork's run. Windows is in the matrix on purpose — the
+  # one thing a Linux runner cannot prove is that the TLS stack and the path escaping
+  # work on the platform where npm users actually are.
   provider:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    # `secrets` is not allowed in a step-level `if`, so it comes in through env and
-    # the step tests that: an absent secret skips the step instead of failing it.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    # `secrets` is not allowed in a step-level `if`, so it comes in through env and the
+    # step tests that: an absent secret skips the step instead of failing it.
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: install ffmpeg (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: install ffmpeg (windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+
       - run: cargo build --release
-      - name: live transcription (needs GEMINI_API_KEY)
+
+      - name: live transcription
         if: env.GEMINI_API_KEY != ''
+        shell: bash
+        env:
+          PROVIDER: gemini
         run: |
-          # The key travels in the environment, never argv and never the project.
-          mkdir -p "$RUNNER_TEMP/cfg"
-          export SPLICE_CONFIG="$RUNNER_TEMP/cfg/config.json"
-          target/release/splice config set gemini.api_key --from-env GEMINI_API_KEY
-          target/release/splice doctor | node -e '
-            const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
-            const g = (d.providers || []).find((p) => p.name === "gemini");
-            if (!g || !g.key_set) { console.error("gemini key not visible to doctor"); process.exit(1); }
-            console.log("doctor sees the gemini key, model " + g.model);
-          '
+          SPLICE=$([ "$RUNNER_OS" = "Windows" ] && echo "target/release/splice.exe" || echo "target/release/splice")
+          # The key travels in the environment only: verify.mjs stores it with
+          # `splice config set gemini.api_key --from-env`, never in argv.
+          SPLICE="$SPLICE" node tools/ci/verify.mjs provider

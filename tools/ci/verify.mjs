@@ -5,6 +5,7 @@
 //
 //   node tools/ci/verify.mjs platform      # doctor, render, odd paths, frames
 //   node tools/ci/verify.mjs transcribe    # whisper: speech in, words out
+//   node tools/ci/verify.mjs provider      # a live hosted call (GEMINI_API_KEY)
 //   node tools/ci/verify.mjs all
 //
 // SPLICE overrides the binary; WHISPER_PROGRAM/WHISPER_MODEL point at a whisper.cpp
@@ -211,6 +212,97 @@ function degradedChecks(doc, source) {
   process.stdout.write("  skipped: text, captions, frames, moved-project render (need libass)\n");
 }
 
+
+/**
+ * A short clip that carries speech, on any of the three OSes: SPEECH_WAV if given,
+ * else macOS `say`, Windows System.Speech, or espeak-ng. The speech rides on a black
+ * frame because `add` rejects audio-only media — which is what an agent would do with
+ * a podcast too.
+ */
+function makeSpeechClip(dir) {
+  const wav = join(dir, "speech.wav");
+  const aiff = join(dir, "speech.aiff");
+  const text = "the quick brown fox jumps over the lazy dog";
+
+  if (process.env.SPEECH_WAV) {
+    ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-i", process.env.SPEECH_WAV, "-ar", "16000", "-ac", "1", wav]);
+  } else if (process.platform === "darwin" && spawnSync("say", ["-o", aiff, text]).status === 0) {
+    ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-i", aiff, "-ar", "16000", "-ac", "1", wav]);
+  } else if (process.platform === "win32") {
+    const ps = [
+      "Add-Type -AssemblyName System.Speech;",
+      "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;",
+      `$s.SetOutputToWaveFile('${wav}');`,
+      `$s.Speak('${text}');`,
+      "$s.Dispose();",
+    ].join(" ");
+    const r = spawnSync("powershell", ["-NoProfile", "-Command", ps], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`System.Speech failed: ${r.stderr}`);
+  } else if (spawnSync("espeak-ng", ["-w", wav, text]).status === 0) {
+    // espeak writes 22050 Hz mono; ffmpeg normalises it below.
+  } else {
+    throw new Error("no speech source: set SPEECH_WAV, or install espeak-ng");
+  }
+
+  const clip = join(dir, "speech.mp4");
+  ffmpeg([
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-f", "lavfi", "-i", "color=c=black:size=320x240:rate=25",
+    "-i", wav, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", clip,
+  ]);
+  return clip;
+}
+
+/** A hosted provider: the one thing a unit test cannot do is cross the network. */
+function providerChecks(provider = process.env.PROVIDER ?? "gemini") {
+  process.stdout.write(`provider checks (${provider}), a live call\n`);
+  const envName = provider === "deepgram" ? "DEEPGRAM_API_KEY" : "GEMINI_API_KEY";
+  const key = process.env[envName];
+  if (!key) {
+    check(`${envName} is set`, false, "no key in the environment");
+    return;
+  }
+
+  const dir = mkdtempSync(join(tmpdir(), "splice-provider-"));
+  const config = join(dir, "config.json");
+  try {
+    const env = { SPLICE_CONFIG: config };
+    // --from-env reads the variable itself: the key never appears in argv or in the
+    // project file, which is the contract this checks as a side effect.
+    json(["config", "set", `${provider}.api_key`, "--from-env", envName], { env });
+
+    const doc = json(["doctor"], { allowFailure: true });
+    // `doctor` reports providers as an object keyed by name, not an array.
+    const seen = (doc.providers ?? doc.report?.providers ?? {})[provider];
+    check("doctor sees the key", seen?.key_set === true, JSON.stringify(seen));
+
+    const clip = makeSpeechClip(dir);
+    const work = join(dir, "project");
+    mkdirSync(work);
+    execFileSync("cp", [clip, join(work, "speech.mp4")]);
+    json(["init", "--size", "320x240", "--fps", "25"], { cwd: work, env });
+    json(["add", "./speech.mp4"], { cwd: work, env });
+
+    const result = json(["transcribe", "--provider", provider, "--attach"], { cwd: work, env, allowFailure: true });
+    check("the live call succeeded", result.ok === true, JSON.stringify(result.error));
+    check("it returned words", typeof result.words === "number" && result.words > 0, result.words);
+    check("the provider is the one asked for", result.provider === provider, result.provider);
+
+    const project = JSON.parse(readFileSync(join(work, "splice.json"), "utf8"));
+    const caption = project.tracks?.captions?.source;
+    check("captions attached and stored relatively", caption === "captions.srt", caption);
+    check("transcript stored relatively", !String(project.tracks?.index?.transcript ?? "").startsWith("/"), project.tracks?.index?.transcript);
+
+    const cap = json(["doctor"], { allowFailure: true });
+    if (cap.ok === true && cap.filters?.libass === true) {
+      const render = json(["render", "-o", "out.mp4"], { cwd: work, env });
+      check("a render with the burned captions succeeds", render.ok === true, JSON.stringify(render.error));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** Whisper, because it needs no key: speech in, words out, paths stored relatively. */
 function transcribeChecks() {
   process.stdout.write("transcribe checks\n");
@@ -236,35 +328,10 @@ function transcribeChecks() {
     // make it, and whisper does not care which.
     const wav = join(dir, "speech.wav");
     const aiff = join(dir, "speech.aiff");
-    // SPEECH_WAV is the escape hatch: a machine with neither `say` nor espeak-ng
-    // can still prove the transcription path with a recording of its own.
-    const said = process.env.SPEECH_WAV
-      ? { status: 0 }
-      : spawnSync("say", ["-o", aiff, "the quick brown fox jumps over the lazy dog"], { encoding: "utf8" });
-    if (process.env.SPEECH_WAV) {
-      ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-i", process.env.SPEECH_WAV, "-ar", "16000", "-ac", "1", wav]);
-    } else if (said.status === 0) {
-      ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-i", aiff, "-ar", "16000", "-ac", "1", wav]);
-    } else {
-      const espeak = spawnSync("espeak-ng", ["-w", wav, "the quick brown fox jumps over the lazy dog"], { encoding: "utf8" });
-      if (espeak.status !== 0) {
-        check("a speech source ('say', espeak-ng, or SPEECH_WAV)", false, espeak.stderr);
-        return;
-      }
-      ffmpeg(["-hide_banner", "-loglevel", "error", "-y", "-i", wav, "-ar", "16000", "-ac", "1", wav]);
-    }
-    check("speech input exists", existsSync(wav) && ffprobeDuration(wav) > 0.5);
-
-    // `add` rejects audio-only media — a clip must have a picture — so carry the
-    // speech on a still frame. This is also what an agent would do with a podcast.
+    const clip = makeSpeechClip(dir);
     const work = join(dir, "project");
     mkdirSync(work);
-    ffmpeg([
-      "-hide_banner", "-loglevel", "error", "-y",
-      "-f", "lavfi", "-i", "color=c=black:size=320x240:rate=25",
-      "-i", wav, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
-      join(work, "speech.mp4"),
-    ]);
+    execFileSync("cp", [clip, join(work, "speech.mp4")]);
     json(["init", "--size", "320x240", "--fps", "25"], { cwd: work, env });
     json(["add", "./speech.mp4"], { cwd: work, env });
 
@@ -296,6 +363,7 @@ function transcribeChecks() {
 const mode = process.argv[2] ?? "platform";
 if (mode === "platform" || mode === "all") platformChecks();
 if (mode === "transcribe" || mode === "all") transcribeChecks();
+if (mode === "provider") providerChecks();
 
 if (failures > 0) {
   process.stdout.write(`\n${failures} check(s) failed\n`);
