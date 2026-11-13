@@ -1,7 +1,13 @@
 # Portable install — every OS, one command
 
-Status: **designed, not built.** Everyone already types one command today; this
-design is about what happens behind it.
+Status: **set aside by decision.** `splice ffmpeg install` fetches a pinned,
+hash-verified static build into the user cache and the lookup prefers it over
+`PATH`, which cures the same disease — a package manager handing out an ffmpeg
+without libass — without shipping ~11 MB per platform package, two unwritten
+build recipes, or GPL obligations on an MIT project. The design and the measured
+Linux recipe below stay as the record. Reopen this only for a requirement a
+download cannot meet: an offline or air-gapped install. Nothing else has been
+raised.
 
 ## Problem
 

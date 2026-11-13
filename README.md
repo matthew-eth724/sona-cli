@@ -231,11 +231,12 @@ Implemented and proven: transcription through Gemini, Deepgram and whisper.cpp;
 multi-track compositing with camera keyframes, sliding placement, masks and
 grading; speed ramps; titles and captions on one ASS engine.
 
-**Not yet true, and not written as if it were:** no release has been run by a
-person on macOS, and only `doctor` has run on Windows. ffmpeg is not bundled in
-the npm packages — the slim static build works and is measured (14 MB + 13 MB,
-5.4 MB gzipped each), but the macOS and Windows recipes are unwritten. Both are
-tracked in [docs/design-portable.md](docs/design-portable.md).
+**ffmpeg is not bundled, deliberately.** `splice ffmpeg install` fetches a
+pinned, hash-verified static build (with libass) into the user cache, and the
+lookup prefers it over `PATH`; that covers the case bundling existed for, without
+~11 MB per platform package and two build recipes nobody here can test. Bundling
+is set aside until someone needs an install with no network at all. The measured
+alternative is in [docs/design-portable.md](docs/design-portable.md).
 
 ## Licence
 
