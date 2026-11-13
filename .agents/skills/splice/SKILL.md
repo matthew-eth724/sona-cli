@@ -57,6 +57,10 @@ want.
 the `splice` binary, then the splice cache, then `PATH`. `doctor` reports the
 path and which rule chose it.
 
+To move the tool itself forward: `splice update --check` reports whether the npm
+registry has a newer release, and `splice update` installs it with npm (it needs
+`npm` on `PATH`, and it never downgrades a build that is ahead of the registry).
+
 ## The loop
 
 ```

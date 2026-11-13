@@ -941,6 +941,31 @@ Two behaviours worth knowing:
 
 `no_history` (exit 2) means there is nothing left to restore.
 
+## update
+
+```
+splice update [--check]
+```
+
+Asks the npm registry what `latest` is, and — unless `--check` — installs it with
+`npm install -g splice-cli@latest`. The binary is not replaced by this process: a
+running executable cannot be overwritten on Windows, and npm already knows where the
+per-platform package lives and how the skill's postinstall runs.
+
+```json
+{"ok":true,"current":"0.1.6","latest":"0.1.6","updated":false}
+{"ok":true,"check":true,"current":"0.1.5","latest":"0.1.6","updated":false}
+{"ok":true,"current":"0.1.5","latest":"0.1.6","updated":true,"restart":"the new version runs from the next command"}
+```
+
+- Needs `npm` on `PATH`. Without it: `update_no_npm`, exit 2, and the fix is the
+  install line to run yourself.
+- Only moves forward. A build newer than the registry (a local 0.2.0 against a
+  published 0.1.6) reports `updated:false` rather than downgrading.
+- npm's own output goes to stderr; stdout stays the single JSON object.
+- Errors: `update_network` (registry unreachable or not JSON), `update_no_npm`,
+  `update_failed` (npm exited non-zero, its message included).
+
 ## ffmpeg
 
 ```

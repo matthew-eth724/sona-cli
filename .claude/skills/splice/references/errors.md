@@ -24,6 +24,9 @@ codes classify for a caller that only sees the status.
 | `ffmpeg_missing` | 4 | no ffmpeg found: neither `SPLICE_FFMPEG`, nor beside the binary, nor in the splice cache, nor on `PATH` | `splice ffmpeg install` |
 | `ffmpeg_incapable` | 4 | ffmpeg lacks `libx264` or `libass` | `splice ffmpeg install` |
 | `ffmpeg_install_network` | 4 | the download failed | check the network, then `splice ffmpeg install` |
+| `update_network` | 2 | the npm registry could not be read | check the network, then `splice update --check` |
+| `update_no_npm` | 2 | `npm` is not on `PATH` | `npm install -g splice-cli@latest` |
+| `update_failed` | 2 | npm exited non-zero while installing | run the npm line yourself |
 | `ffmpeg_install_io` | 4 | a local filesystem operation failed: cache unwritable, path is a file, disk full | check write access to the cache directory, then `splice ffmpeg install` |
 | `ffmpeg_install_hash` | 4 | the download did not match its pinned sha256 | retry; do not trust a mirror that keeps failing |
 | `ffmpeg_install_unsupported` | 4 | no pinned build for this OS/arch | system package manager, or set `SPLICE_FFMPEG` |

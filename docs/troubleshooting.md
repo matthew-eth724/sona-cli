@@ -40,6 +40,9 @@ $ splice doctor
 | `ffmpeg_missing` | 4 | `ffmpeg` or `ffprobe` is not on `PATH` | `splice ffmpeg install` — or your OS package manager if you prefer a system build |
 | `ffmpeg_incapable` | 4 | the ffmpeg found lacks `libx264` or `libass` | `splice ffmpeg install`, or check it yourself: `ffmpeg -filters \| grep -w subtitles` (libass) and `ffmpeg -encoders \| grep -w libx264`; if either is empty, install a build that has it. Homebrew on macOS can install an ffmpeg without libass |
 | `ffmpeg_install_network` | 4 | the download failed | check the network, then `splice ffmpeg install` |
+| `update_network` | 2 | the npm registry could not be read | check the network, then `splice update --check` |
+| `update_no_npm` | 2 | `npm` is not on `PATH` | `npm install -g splice-cli@latest` |
+| `update_failed` | 2 | npm exited non-zero while installing | run `npm install -g splice-cli@latest` yourself to see the output |
 | `ffmpeg_install_io` | 4 | a local filesystem operation failed: cache unwritable, path is a file, disk full | check write access to the cache directory, then `splice ffmpeg install` |
 | `ffmpeg_install_hash` | 4 | the download did not match its pinned sha256 | retry; if it persists, do not trust that mirror |
 | `ffmpeg_install_unsupported` | 4 | no pinned build for this OS/arch | use the system package manager, or `SPLICE_FFMPEG` |

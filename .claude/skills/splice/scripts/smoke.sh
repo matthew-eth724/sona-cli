@@ -16,11 +16,11 @@ SPLICE="${SPLICE:-$(command -v splice || true)}"
 command -v ffmpeg >/dev/null || { echo "ffmpeg not on PATH" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq not on PATH (needed to assert the JSON)" >&2; exit 1; }
 
-# This skill documents 0.1.5 behaviour: relative media paths, render progress,
+# This skill documents 0.1.6 behaviour: relative media paths, render progress,
 # the cache commands, and refusals for edits the compositor cannot apply. An older
 # binary will fail the assertions below for a reason that has nothing to do with
 # the install being broken, so say that plainly.
-need="0.1.5"
+need="0.1.6"
 have="$("$SPLICE" --version 2>/dev/null | awk '{print $2}')"
 if [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]; then
   printf 'splice %s is older than %s: install the current release (`npm i -g splice-cli@next`) or set SPLICE to a newer binary.\n' "$have" "$need" >&2

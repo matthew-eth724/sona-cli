@@ -20,6 +20,7 @@ mod report;
 mod text;
 mod time;
 mod transcript;
+mod update;
 
 fn main() {
     cli::run();

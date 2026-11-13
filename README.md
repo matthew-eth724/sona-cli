@@ -123,6 +123,15 @@ Fonts need no config: lookup tries `SPLICE_FONT`, then `fc-match`, then fonts th
 OS already ships (`C:\Windows\Fonts\segoeui.ttf`, `/System/Library/Fonts/…`,
 dejavu noto liberation on Linux). `doctor` reports which source won.
 
+A release ships under the `next` tag and is promoted to `latest` deliberately.
+`splice update` asks the registry and, with npm, installs the newest version;
+`splice update --check` only reports:
+
+```console
+$ splice update --check
+{"ok":true,"check":true,"current":"0.1.5","latest":"0.1.6","updated":false}
+```
+
 From source, or to hack on it:
 
 ```console

@@ -546,6 +546,13 @@ enum Cmd {
         #[command(subcommand)]
         cmd: CacheCmd,
     },
+    /// Report whether a newer release exists, or install it with npm.
+    Update {
+        /// Only report; do not install anything.
+        #[arg(long)]
+        check: bool,
+    },
+
     /// Fetch a verified static ffmpeg instead of using the system one.
     Ffmpeg {
         #[command(subcommand)]
@@ -2497,6 +2504,61 @@ fn dispatch(cli: Cli) -> Result<()> {
                 }
             }
             ok(report, &warnings);
+            Ok(())
+        }
+        Cmd::Update { check } => {
+            let current = env!("CARGO_PKG_VERSION");
+            let url = crate::update::registry_url();
+            let document = crate::ffmpeg_install::fetch_bytes(&url).map_err(|e| {
+                anyhow::anyhow!("update_network: {e}")
+            })?;
+            let latest = crate::update::latest_from_registry(&document).map_err(|e| {
+                anyhow::anyhow!("update_network: {e}")
+            })?;
+
+            // Only move forward. A dev build newer than the registry must not be
+            // silently replaced with an older published one.
+            let newer = match (
+                crate::update::Version::parse(&latest),
+                crate::update::Version::parse(current),
+            ) {
+                (Some(l), Some(c)) => l > c,
+                _ => latest != current,
+            };
+
+            if !newer {
+                ok(
+                    json!({
+                        "current": current,
+                        "latest": latest,
+                        "updated": false,
+                    }),
+                    &[],
+                );
+                return Ok(());
+            }
+            if check {
+                ok(
+                    json!({
+                        "check": true,
+                        "current": current,
+                        "latest": latest,
+                        "updated": false,
+                    }),
+                    &[],
+                );
+                return Ok(());
+            }
+            crate::update::run_npm_install().map_err(|e| anyhow::anyhow!("{e}"))?;
+            ok(
+                json!({
+                    "current": current,
+                    "latest": latest,
+                    "restart": "the new version runs from the next command",
+                    "updated": true,
+                }),
+                &[],
+            );
             Ok(())
         }
         Cmd::Cache { cmd } => match cmd {
