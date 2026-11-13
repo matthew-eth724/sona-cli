@@ -21,6 +21,17 @@ $ npx splice-cli grade --saturation 1.3
 $ npx splice-cli ramp clip_1 --from 1 --to 2 --slices 4
 ```
 
+**ffmpeg is required**, and a system one can be broken: Homebrew on macOS can
+install a build without libass, which cannot draw captions or titles. If `splice
+doctor` reports `ffmpeg_missing` or `ffmpeg_incapable`, run:
+
+```console
+$ splice ffmpeg install       # verified static build, ~56 MB down
+$ splice doctor               # ffmpeg_source: "splice cache"
+```
+
+To go back to your system build, delete that cache directory or set `SPLICE_FFMPEG`.
+
 **ffmpeg is required and is not bundled.** `splice` needs `ffmpeg` and `ffprobe`
 built with `libx264` and `libass`:
 
