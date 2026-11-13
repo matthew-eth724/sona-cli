@@ -1,0 +1,57 @@
+---
+title: "Introduction"
+sidebarTitle: "Overview"
+description: "A video-editing CLI for AI agents and for anyone who would rather edit a document than a filter graph."
+---
+
+`splice` edits video by editing a JSON document. You make typed changes — trim,
+retime, caption, composite, grade — and `splice` compiles the result into ffmpeg
+argv, runs it, and caches each step.
+
+Every command answers with exactly one JSON object, so a program (or a person
+reading a transcript) can tell what happened without scraping logs.
+
+## Why it exists
+
+Raw ffmpeg is a filter-graph language: correct, but hard to review, hard to
+version, and easy to get subtly wrong. `splice` keeps the edit in `splice.json`,
+which you can diff, hand to a reviewer, or regenerate from a script.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    From nothing to a rendered file in five commands.
+  </Card>
+  <Card title="Install" icon="download" href="/guides/installation">
+    npm, the ffmpeg requirement, and what to do when a system build is broken.
+  </Card>
+  <Card title="Command reference" icon="terminal" href="/reference/cli">
+    Every verb, with the flags that matter.
+  </Card>
+  <Card title="For agents" icon="robot" href="/guides/agents">
+    The loop, the contract, and the anti-patterns.
+  </Card>
+</CardGroup>
+
+## What it is good at
+
+- Cutting and retiming a recording, including removing fillers and long silences.
+- Captions: transcribe, review the SRT, burn it in as two separate decisions.
+- Compositing: layers, a moving camera, sliding placement, masks, one grade.
+- Iterating cheaply: a preview profile, a per-step cache, and `plan` to see the
+  argv before spending time.
+- Being driven by an agent: one JSON object per command, warnings that say what
+  will not do what you asked, and errors that name the command that clears them.
+
+## What it is not
+
+- A transcoder. If the job is "change container" or "re-encode at another
+  bitrate", use ffmpeg directly.
+- A timeline GUI. The document is the interface.
+- A streaming or broadcast tool. It renders files.
+
+## Requirements
+
+`node` 18+ and `ffmpeg` with `libx264` and `libass`. Linux builds are static, so
+Alpine works too. `splice doctor` is the first command to run anywhere new: it
+reports which ffmpeg won, which encoders and filters exist, and whether a font
+was found.

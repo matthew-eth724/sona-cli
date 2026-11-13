@@ -1,0 +1,73 @@
+---
+title: "Quickstart"
+description: "Install, create a project, make three edits, render a file, and look at it."
+---
+
+This page takes you from nothing to a rendered file. It assumes a video file
+exists and that `ffmpeg` is installed.
+
+<Steps>
+  <Step title="Install">
+    ```bash
+    npm install -g splice-cli
+    splice doctor
+    ```
+
+    `doctor` prints one JSON object. If `ok` is false, fix that first — every
+    render would otherwise fail on a filter, not on your edit.
+  </Step>
+
+  <Step title="Create a project">
+    ```bash
+    splice init --size 1080x1920 --fps 30
+    splice add intro.mp4
+    ```
+
+    `init` writes `splice.json`. `add` appends the clip and prints its id.
+  </Step>
+
+  <Step title="Make an edit">
+    ```bash
+    splice trim clip_1 --to 4s
+    splice text "Ship faster" --from 0.5 --to 4 --pos top-left
+    ```
+
+    Every mutation prints `{"ok":true,...}` and, when something will not do what
+    you asked, a `warnings[]` array. Read it.
+  </Step>
+
+  <Step title="Iterate cheaply">
+    ```bash
+    splice render --preview -o preview.mp4
+    splice frames --at 1,2.5 -o stills
+    ```
+
+    `--preview` renders a small proxy with its own cache. `frames` writes PNGs so
+    you can look at the result without watching the whole file.
+  </Step>
+
+  <Step title="Render the real thing">
+    ```bash
+    splice render -o out.mp4
+    ```
+
+    The response reports `steps.total`, `steps.ran` and `steps.reused`, plus the
+    duration, size and fps that were actually produced.
+  </Step>
+</Steps>
+
+<Tip>
+  Read the JSON, never the logs. stdout is one object; stderr carries progress and
+  a short failure tail.
+</Tip>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Editing" icon="scissors" href="/guides/editing">
+    Trim, speed, ramps, reordering, and tightening a recording.
+  </Card>
+  <Card title="Captions" icon="closed-captioning" href="/guides/captions">
+    Transcribe, review, and burn in — as separate steps.
+  </Card>
+</CardGroup>

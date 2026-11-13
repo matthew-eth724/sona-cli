@@ -1,0 +1,73 @@
+---
+title: "Project file"
+description: "splice.json version 2: canvas, layers, overlays, audio, captions, grade — and the invariants that make a file invalid."
+---
+
+`splice.json` is the edit. It is meant to be read, diffed and committed. Commands
+validate before saving, so a file produced by a command opens.
+
+## Shape
+
+```json
+{
+  "version": 2,
+  "canvas": { "width": 640, "height": 360, "fps": "25/1" },
+  "tracks": {
+    "layers": [
+      { "id": "main", "z": 0, "start": 0, "place": { "x": 0, "y": 0, "size": 1 },
+        "clips": [ { "id": "clip_1", "source": "media/a.mp4", "src_in": 0, "src_out": 6000000, "speed": 1.0 } ] }
+    ],
+    "overlays": [],
+    "audio": null,
+    "captions": null,
+    "index": null
+  },
+  "grade": null
+}
+```
+
+## Fields
+
+- `canvas`: `width`, `height`, `fps` as a rational string.
+- `tracks.layers[]`: the z-ordered stack. `id`, `z`, `start`, `place {x,y,size}`,
+  optional `motion` (camera keys), optional `place_keys` (position over time),
+  optional `mask`, and `clips[]`.
+- `tracks.overlays[]`: text and image overlays, each with a time range and anchor.
+- `tracks.audio`: the music bed.
+- `tracks.captions`: an attached SRT, with `burn`.
+- `tracks.index`: the word index pointer, transcript path, provider and language.
+- `grade`: one grade for the whole program.
+
+Clips carry `source`, `src_in`, `src_out` and `speed`; a speed ramp also carries
+`speed_keys`.
+
+## Invariants
+
+A file that breaks any of these will not load:
+
+- `version` must be `2`. A `1` on disk is upgraded on open; anything else is
+  refused.
+- `canvas.width` and `canvas.height` are non-zero.
+- Exactly one layer at `z: 0`, and it must fill the canvas (`place` of
+  `{ "x": 0, "y": 0, "size": 1 }`).
+- Layer `z` values are unique.
+- Every clip has `speed > 0` and `src_out >= src_in`.
+
+Violations exit 2 with `project_invalid`, whose fix is `splice undo`.
+
+## Paths have exactly two rules
+
+- A source **inside** the project directory is stored relative to it, with `/`
+  separators: `media/a.mp4`.
+- A source **outside** is stored absolute.
+
+Reads resolve both against the project directory, so a project keeps working when
+the whole directory moves. Paths are canonicalized before the comparison, so a
+symlinked working directory cannot defeat it.
+
+## Comments and hand edits
+
+Hand-editing is allowed — the file is a document — but commands exist for
+everything they cover, and a command validates and snapshots. If you edit by
+hand, run `splice inspect` afterwards: `project_invalid` tells you which
+invariant broke.

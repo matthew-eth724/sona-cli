@@ -1,0 +1,70 @@
+---
+title: "Editing"
+description: "Trim, retime, reorder, ramps, and removing fillers or long silences."
+---
+
+The timeline is a list of clips. Every clip has an id, a source, an in/out point
+and a speed. Edits are one command each, so a failure names one thing.
+
+## The verbs
+
+| Command | What it does |
+| --- | --- |
+| `add <file> [...]` | Append clips. `--layer <id>` targets a layer, `--at <index>` inserts. |
+| `list` | The timeline as JSON, with `missing` on sources that no longer resolve. |
+| `trim <id>` | `--from`, `--to`, `--words w12-w19`, `--pad`, `--dry-run`. |
+| `speed <id> <factor>` | Constant rate, pitch preserved. |
+| `ramp <id> --from --to --slices` | A speed change across the clip, piecewise. |
+| `move <id> <index>` | Reorder. |
+| `rm <id>` | Remove. |
+| `inspect` | Summary plus diagnostics for the whole project. |
+
+## Trimming
+
+```bash
+splice trim clip_1 --to 4s
+splice trim clip_1 --from 2s --to 5.5s
+splice trim clip_1 --words w12-w19 --pad 120ms
+```
+
+`--words` cuts by index ids, which is how you trim to what was said rather than
+to a guessed timestamp. A trim past the end of the medium is clamped and
+reported as a `clip_past_media` warning; the `duration` in the response is what
+will actually render.
+
+## Speed
+
+```bash
+splice speed clip_1 1.5
+splice ramp clip_1 --from 1 --to 2 --slices 4
+```
+
+`speed` preserves pitch by chaining `atempo` inside its documented range.
+`ramp` cuts the source at key times and gives each slice one constant rate, so a
+ramp is a staircase rather than a continuous curve — the trade is stated because
+a continuously varying rate is not expressible in `atempo`.
+
+## Tightening a recording
+
+```bash
+splice index clip_1
+splice cut clip_1
+```
+
+`index` builds a word index for the clip's audio, cached by audio hash. `cut`
+uses it to remove fillers and long silences, splitting the clip into what
+survives. `view` prints words in a range, `find` searches them, and `scenes`
+writes shot boundaries into the same index.
+
+<Tip>
+  `cut` is destructive in the sense that it replaces one clip with several. Run
+  `history` first if you are unsure; `undo` restores the previous document.
+</Tip>
+
+## What survives an edit
+
+- Document changes are validated before saving, so an edit cannot leave a file
+  the next command refuses.
+- Every mutation takes a snapshot, so `undo --steps K` goes back K edits.
+- Only the cache steps that depend on the change are invalidated; `render` reports
+  how many ran versus were reused.

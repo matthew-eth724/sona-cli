@@ -1,0 +1,107 @@
+---
+title: "Command reference"
+description: "Every verb, its flags, and what it prints."
+---
+
+`--project <path>` is global and defaults to `splice.json`. Every command prints
+one JSON object on stdout; `view` and `find` print plain text unless given `--json`.
+
+## Setup
+
+<AccordionGroup>
+  <Accordion title="init — create a project">
+    `splice init --size WxH --fps N`
+
+    Writes `splice.json` and prints `{"ok":true,"canvas":{...},"project":"splice.json"}`.
+  </Accordion>
+  <Accordion title="doctor — is this machine usable?">
+    `splice doctor`
+
+    Reports ffmpeg (version, path, which rule chose it), encoders, filters, the
+    resolved font, credentials, config path and cache usage. Exits 4 when ffmpeg
+    is missing or lacks `libx264`/`libass`.
+  </Accordion>
+  <Accordion title="config — keys and models">
+    `splice config set <provider>.<field> [VALUE] [--stdin] [--from-env VAR]`
+    `splice config list`
+
+    Providers: `gemini`, `deepgram`, `whisper`. Secrets only via `--stdin` or
+    `--from-env`. `list` shows set/missing, the source, and a key fingerprint.
+  </Accordion>
+  <Accordion title="ffmpeg — fetch a verified engine">
+    `splice ffmpeg install`
+
+    Downloads a pinned static ffmpeg+ffprobe, verifies sha256, installs into the
+    user cache. A second run is a no-op. Codes: `ffmpeg_install_network`,
+    `ffmpeg_install_hash`, `ffmpeg_install_io`, `ffmpeg_install_unsupported`.
+  </Accordion>
+  <Accordion title="update — move to the newest release">
+    `splice update [--check]`
+
+    Asks the npm registry for `latest` and installs it with npm. Only moves
+    forward. Codes: `update_network`, `update_no_npm`, `update_failed`.
+  </Accordion>
+</AccordionGroup>
+
+## Timeline
+
+| Command | Flags that matter |
+| --- | --- |
+| `add <file> [...]` | `--layer <id>`, `--at <index>` |
+| `list` | — |
+| `trim <id>` | `--from`, `--to`, `--words w12-w19`, `--pad`, `--dry-run` |
+| `speed <id> <factor>` | — |
+| `ramp <id>` | `--from`, `--to`, `--slices` |
+| `move <id> <index>` | — |
+| `rm <id>` | — |
+| `inspect` | — |
+
+## Picture and layers
+
+| Command | Flags that matter |
+| --- | --- |
+| `text "<s>"` | `--from`, `--to`, `--pos top-left\|top\|…`, `--size` |
+| `image <file>` | `--from`, `--to` |
+| `transition <id>` | `--kind`, `--duration` |
+| `layer add <id>` | `--z`, `--place x,y,size` |
+| `layer set <id>` | `--z`, `--start`, `--place` |
+| `layer rm <id>` | — |
+| `key <layer>` | `--t`, `--zoom`, `--at x,y`, `--place x,y`, `--clear` |
+| `mask <layer>` | `--chroma <colour>`, `--vignette`, `--none` |
+| `grade` | `--brightness`, `--contrast`, `--saturation`, `--gamma`, `--lut` |
+
+## Sound and speech
+
+| Command | Flags that matter |
+| --- | --- |
+| `audio <file>` | — |
+| `duck` | threshold and ratio flags |
+| `caption <file.srt>` | — |
+| `transcribe` | `--provider`, `--model`, `--language`, `--srt`, `--attach`, `--yes`, `--max-duration` |
+| `index` | `--from <transcript.json\|.srt>` |
+| `view` | range flags, `--json` |
+| `find` | query, `--json` |
+| `scenes` | — |
+| `cut` | — |
+
+## Output, safety, cache
+
+| Command | Flags that matter |
+| --- | --- |
+| `plan` | `--preview`, loudness flags |
+| `render` | `-o`, `--preview`, `--loudnorm`, `--lufs`, `--true-peak`, `--lra`, `--timeout`, `--progress`, `--no-progress` |
+| `frames` | `--at`, `-o`, `--sheet N`, `--preview` |
+| `history` | `--limit` |
+| `undo` | `--steps K` |
+| `cache info` | — |
+| `cache prune` | `--dry-run`, `--all` |
+
+## Shapes
+
+```json
+{"ok":true,"added":[{"id":"clip_1","source":"media/a.mp4","duration":"00:00:06.000"}]}
+{"ok":true,"changed":["clip_1"],"duration":"00:00:05.000","invalidated":2}
+{"ok":true,"clips":[{"id":"clip_1","source":"media/a.mp4","in":"00:00:00.000","out":null,"speed":1.0,"missing":false}]}
+{"ok":true,"duration":"00:00:06.000","fps":"25/1","size":"640x360","steps":{"total":7,"ran":0,"reused":7},"out":"/p/out.mp4","loudness":null}
+{"ok":false,"error":{"code":"media_missing","message":"…","fix":"splice list"}}
+```

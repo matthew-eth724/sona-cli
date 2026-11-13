@@ -1,0 +1,83 @@
+---
+title: "Install and ffmpeg"
+description: "What `npm install` gives you, why ffmpeg is required, and how to fix a build that cannot draw captions."
+---
+
+## Install
+
+```bash
+npm install -g splice-cli
+splice doctor
+```
+
+The launcher resolves a per-platform binary through npm optional dependencies:
+Linux x64/arm64, macOS x64/arm64, Windows x64. Nothing is downloaded at install
+time, and `npm ci --ignore-scripts` still works. Linux builds are static, so
+Alpine is supported.
+
+## The ffmpeg requirement
+
+`splice` does not bundle ffmpeg. It needs a build with `libx264` and `libass`:
+`libx264` encodes the picture, and `libass` draws captions and titles.
+
+A system build can be missing libass. Homebrew on macOS has shipped such builds;
+on GitHub's macOS runners, ffmpeg 9.0.2 has no `ass` or `subtitles` filter. The
+symptom is specific: everything renders until a caption or title is added, then
+ffmpeg fails with `No such filter: 'subtitles'`.
+
+Check a build directly:
+
+```bash
+ffmpeg -filters | grep -w subtitles
+ffmpeg -encoders | grep -w libx264
+```
+
+Both must print a line. If either is empty:
+
+```bash
+splice ffmpeg install
+splice doctor
+```
+
+That downloads a pinned static build, verifies the sha256 of the uncompressed
+binary against pins compiled into `splice`, and installs it into a per-user
+cache. Both ffmpeg and ffprobe must verify before either is moved into place, so
+a mismatched download installs nothing.
+
+<Note>
+  This is explicit, not a postinstall: nothing is fetched behind your back. It is
+  about 56 MB to download and 160 MB on disk, and it needs network once.
+</Note>
+
+## Which binary wins
+
+`doctor` reports `ffmpeg_source`, and the order is fixed:
+
+1. `SPLICE_FFMPEG` — a directory holding both tools, or a path whose sibling
+   `ffprobe` is preferred.
+2. A copy beside the `splice` binary.
+3. The splice cache, where `ffmpeg install` puts one.
+4. `PATH`.
+
+To go back to the system build, delete the cache directory — `~/.cache/splice/ffmpeg`
+on Linux, `~/Library/Caches/splice/ffmpeg` on macOS, `%LOCALAPPDATA%\splice\ffmpeg`
+on Windows — or point `SPLICE_FFMPEG` at the binary you want.
+
+## Keeping it current
+
+```bash
+splice update --check
+splice update
+```
+
+`splice update` asks the npm registry for `latest` and installs it with
+`npm install -g splice-cli@latest`; it needs `npm` on `PATH`, and it only moves
+forward, so a local build ahead of the registry is left alone.
+
+## The agent skill
+
+The npm package ships a `splice` skill and installs it into whichever skill
+directories already exist (`~/.claude/skills`, `~/.agents/skills`,
+`~/.pi/agent/skills`). It never creates one, and a failed copy never fails the
+install. If you installed with `--ignore-scripts`, run `splice-skill`; `--dir`
+puts it somewhere else, and `SPLICE_SKILL=none` skips it.

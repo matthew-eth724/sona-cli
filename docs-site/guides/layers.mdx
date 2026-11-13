@@ -1,0 +1,82 @@
+---
+title: "Layers, camera, masks"
+description: "How the z-ordered stack composites, what the bottom layer means, and how placement, camera keys and masks differ."
+---
+
+A project has one stack of layers, ordered by `z`. That stack is the picture.
+
+## The two rules people conflate
+
+**The bottom of the z order is the program frame.** Its `place`, `place_keys` and
+`start` are reported, not applied. Editing them is refused at edit time (exit 5)
+because accepting an edit the compositor will ignore is worse than refusing it.
+
+**The layer at `z: 0` carries the program audio and must fill the canvas.** It is
+usually the same layer as the bottom one, but not always: with layers at `z: -5`
+and `z: 0`, the `z: -5` layer is the bottom, and the `z: 0` layer is composited.
+
+<Warning>
+  A document that already carries placement keys or a start on the bottom layer
+  keeps rendering and reports `place_keys_unused`, `layer_start_unused` or
+  `place_unused`, each with the command that clears it. Nothing is bricked.
+</Warning>
+
+## Adding a layer
+
+```bash
+splice layer add pip --z 10 --place 0.7,0.7,0.3
+splice add lower-third.png --layer pip
+```
+
+`--place` is `x,y,size` in fractions of the canvas; `size` is the width. A layer
+above the bottom is composited with `overlay`, in z order.
+
+## Moving without resizing
+
+```bash
+splice key pip --t 0 --place 0.7,0.7
+splice key pip --t 3 --place 0.2,0.2
+```
+
+Placement keys animate **position only**. Size does not animate — `scale` has no
+time variable, and two mechanisms for "how big is this" would compete. Use a
+camera key if you want the whole frame to change size.
+
+## Camera
+
+```bash
+splice key main --t 0 --zoom 1.0
+splice key main --t 4 --zoom 1.6 --at 0.4,0.5
+```
+
+Camera keys are `zoom` and where the camera looks (`--at`, as fractions of the
+frame). A constant camera lowers to `crop`+`scale`; a moving one to `scale`+`zoompan`.
+On the bottom layer a camera works, because the bottom layer is the frame.
+
+## Masks
+
+```bash
+splice mask pip --chroma 0x00FF00
+splice mask pip --vignette
+```
+
+A mask applies to its layer **before** placement, so a chroma key keeps the
+layer's own alpha rather than the composite's. Masks are refused on the bottom
+layer: the program frame is full-canvas by invariant.
+
+## One grade for the whole program
+
+```bash
+splice grade --saturation 1.2 --contrast 1.05
+splice grade --lut film.cube
+```
+
+`grade` inserts one `eq` (plus `lut3d` for a LUT) before text and captions, so
+titles are not graded with the picture. It is document-wide by design: per-layer
+grading would be a second place to look for "why is this shot orange".
+
+## Where it lands in the render
+
+The pipeline is: normalize each source, concat, composite layers in z order,
+apply the grade, then burn text and captions, then mix audio. `splice plan` prints
+the argv for each step before anything runs.

@@ -1,0 +1,65 @@
+---
+title: "Errors and warnings"
+description: "Every code with its exit status, cause and fix, plus the warnings worth acting on."
+---
+
+Every failure is one JSON object with `error.code`, `error.message` and
+`error.fix`. Read `fix` first: it names a command that clears the error.
+
+| Exit | Class |
+| --- | --- |
+| 0 | success |
+| 2 | project, precondition, transcription or configuration |
+| 3 | media missing or unreadable |
+| 4 | ffmpeg failed, missing, or incapable |
+| 5 | bad usage |
+
+## Errors
+
+| Code | Exit | Cause | Fix |
+| --- | --- | --- | --- |
+| `usage` | 5 | wrong arguments; or an edit the compositor cannot apply | `splice <command> --help` |
+| `project_invalid` | 2 | a document invariant broke | `splice undo` |
+| `media_missing` | 3 | a stored source does not resolve against the project directory | `splice list` |
+| `unreadable` | 3 | the file exists but ffprobe cannot read it | replace the file |
+| `ffmpeg_missing` | 4 | no ffmpeg via `SPLICE_FFMPEG`, beside the binary, in the splice cache, or on `PATH` | `splice ffmpeg install` |
+| `ffmpeg_incapable` | 4 | the build lacks `libx264` or `libass` | `splice ffmpeg install` |
+| `ffmpeg_failed` | 4 | a step exited non-zero; the message carries its last stderr lines | `splice plan` |
+| `nothing_rendered` | 2 | `frames` before a render for that profile | `splice render` |
+| `no_font` | 2 | no usable font for text or captions | install a font, then `splice doctor` |
+| `no_index` | 2 | an index-driven command ran first | `splice index --from <transcript.json\|.srt>` |
+| `no_history` | 2 | `undo` with nothing recorded | `splice history` |
+| `asr_no_key` | 2 | no provider has a key | `splice config set gemini.api_key --stdin` |
+| `asr_over_limit` | 2 | audio longer than `--max-duration` | `--yes`, or raise the limit |
+| `asr_key_invalid` | 2 | the provider rejected the key | `splice config list` — an env var may override the file |
+| `asr_unavailable` | 2 | provider 5xx or the network failed | retry; the transcript cache re-uploads nothing |
+| `asr_unreadable` | 2 | an API shape `splice` does not know | try another provider |
+| `whisper_missing` | 2 | `whisper.program` unset or not a file | set it to a real path |
+| `whisper_model` | 2 | `whisper.model` unset, a name, or not a file | set it to a `.bin` path |
+| `whisper_failed` | 2 | the whisper binary exited non-zero | the message carries its last lines |
+| `ffmpeg_install_network` | 2 | the download failed | check the network |
+| `ffmpeg_install_hash` | 2 | the download did not match its pinned sha256 | retry; do not trust a mirror that keeps failing |
+| `ffmpeg_install_io` | 2 | the cache is unwritable, the path is a file, or the disk is full | check write access |
+| `ffmpeg_install_unsupported` | 2 | no pinned build for this OS/arch | system package manager, or `SPLICE_FFMPEG` |
+| `update_network` | 2 | the npm registry could not be read | `splice update --check` |
+| `update_no_npm` | 2 | `npm` is not on `PATH` | `npm install -g splice-cli@latest` |
+| `update_failed` | 2 | npm exited non-zero | run the npm line yourself |
+| `internal` | 2 | a bug | `splice doctor`, then report it with the message |
+
+## Warnings
+
+A warning means the command succeeded but the result will not do what you asked.
+Warnings appear on the response and again from `inspect`, `plan`, `render` and
+`frames`.
+
+| Code | Meaning |
+| --- | --- |
+| `clip_past_media` | a trim ran past the end and was clamped |
+| `layer_audio_dropped` | an upper layer has audio; only `z: 0` is heard |
+| `place_keys_unused` | the bottom layer carries placement keys that never apply |
+| `layer_start_unused` | the bottom layer's `start` is not applied |
+| `place_unused` | the bottom layer's `place` is ignored |
+| `place_off_canvas` | an overlay sits outside the frame at some point |
+| `text_past_end` | a title ends after the picture |
+| `captions_missing` | the SRT is not where the document says |
+| `cache_large` | the render cache passed 1 GiB |

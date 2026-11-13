@@ -1,0 +1,60 @@
+---
+title: "Captions and transcription"
+description: "Turn a recording into an SRT, review it, then decide separately whether to burn it in."
+---
+
+Making captions and burning them in are separate decisions, and the commands
+reflect that: `transcribe` writes a file, `caption` attaches one.
+
+## Transcribe
+
+```bash
+splice transcribe clip_1 --provider gemini --attach
+splice transcribe --provider whisper --language en
+splice transcribe --srt review.srt          # write somewhere else
+```
+
+`transcribe` writes `captions.srt` **beside the project**, not into the cache, so
+the file is yours to edit and can outlive a cache wipe. It attaches the captions
+only with `--attach`; otherwise you get the SRT and its word count and can review
+it first.
+
+Silence is not a failure: a recording with no speech returns
+`{"words":0,"speech":false}` with an `asr_no_speech` warning.
+
+## Providers and keys
+
+Keys never go in `splice.json` and never in argv.
+
+```bash
+echo "$GEMINI_API_KEY" | splice config set gemini.api_key --stdin
+splice config set deepgram.model nova-3
+splice config set whisper.program /path/to/whisper-cli
+splice config set whisper.model /path/to/ggml-small.en.bin
+splice config list
+```
+
+- `gemini` and `deepgram` are hosted; `whisper` runs a local binary.
+- An environment variable beats the config file for the same provider.
+- `config list` reports whether a key is set, from which source, and a
+  fingerprint — never the key itself.
+
+## Burn them in
+
+```bash
+splice caption captions.srt
+```
+
+`splice text` and `splice caption` share one engine (libass). That is why a title
+and a subtitle look consistent, and why a build without libass cannot do either.
+
+## Fixing the words
+
+`captions.srt` is a normal SRT. Edit it, then re-run `splice caption`. The render
+cache is keyed on the file's content, so changing it invalidates only the burn-in
+step.
+
+<Note>
+  Timing lives in the SRT, not the document. If the transcription is right but
+  the timing is not, edit the SRT rather than asking the provider again.
+</Note>

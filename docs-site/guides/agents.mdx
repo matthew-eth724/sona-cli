@@ -1,0 +1,72 @@
+---
+title: "For agents"
+description: "The loop, the JSON contract, and the mistakes that cost the most tokens."
+---
+
+`splice` is designed to be driven by a program. This page is the shortest path to
+driving it well.
+
+## The loop
+
+```
+doctor → inspect → edit → render --preview → frames → look → render
+```
+
+<Steps>
+  <Step title="doctor, once per machine">
+    If `encoders.libx264` or `filters.libass` is false, stop. Every render will
+    fail on a filter, not on your edit. `splice ffmpeg install` fixes a missing or
+    caption-less ffmpeg.
+  </Step>
+  <Step title="inspect before editing">
+    Cheap, and it returns `duration`, the clip list, and `warnings[]`.
+  </Step>
+  <Step title="one command per change">
+    A failure then names one thing. `splice <verb> --help` is authoritative for
+    flags.
+  </Step>
+  <Step title="preview while it is wrong">
+    `splice render --preview` is a proxy with its own cache; the final profile is
+    for shipping.
+  </Step>
+  <Step title="look at a frame">
+    `splice frames --at <t> -o stills`, then actually open the PNG. A render that
+    exits 0 can still be wrong.
+  </Step>
+</Steps>
+
+## The contract
+
+- stdout is exactly one JSON object per command. Exceptions: `view` and `find`
+  print plain text unless given `--json`.
+- `render` writes one progress object per line to **stderr**: `start`, then `ran`
+  or `reused`. `--no-progress` or `SPLICE_PROGRESS=0` silences it.
+- Every error has `error.code` and `error.fix`; the fix names a command that
+  clears it. Read it before guessing.
+- Exit codes: `0` ok, `2` project or precondition, `3` media, `4` ffmpeg, `5`
+  usage.
+- Never scrape stderr for results.
+
+## Warnings are the interesting field
+
+An over-long trim is clamped; an overlay past the end is dropped; a layer with
+audio is heard only if it is the layer at `z: 0`; placement on the bottom layer is
+reported, not applied. Each of those succeeds with a `warnings[]` entry. A warning
+ignored at edit time becomes a mystery at render time.
+
+## Anti-patterns
+
+- Hand-editing `splice.json` for something a command already does. Commands
+  validate, snapshot, and invalidate precisely.
+- Parsing stdout as lines, or expecting progress on stdout.
+- Rendering the final profile to check a layout.
+- Treating `{"ok":true}` as proof the edit landed. Look at a frame.
+- Reaching for raw ffmpeg before checking `splice <verb> --help`.
+
+## If a render fails
+
+1. `error.code` says the class, and therefore what a caller sees.
+2. `error.fix` names a command; run it unless you know better.
+3. If the fix is `splice plan`, run it and read the argv: the failure is in the
+   filter graph, and `plan` shows exactly what ffmpeg was asked to do.
+4. If the edit reported `ok:true`, re-read that response's `warnings[]`.

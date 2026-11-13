@@ -1,0 +1,53 @@
+---
+title: "How it works"
+description: "The pipeline, why compositing is its own step, and how the pieces are tested."
+---
+
+`splice` is one Rust binary. It reads `splice.json`, compiles a plan, and runs it
+through ffmpeg, caching each step.
+
+## The pipeline
+
+1. **Normalize** each source to the working canvas and codec.
+2. **Concat** the normalized segments.
+3. **Composite** layers in z order: placement, camera, masks.
+4. **Decorate**: grade, then text and captions.
+5. **Mix** audio: bed, ducking, loudness.
+
+`splice plan` prints these argv before anything runs. `render` runs them into
+`.splice/cache`, reusing any step whose key matches.
+
+## Why compositing is its own step
+
+Camera and placement change what one layer looks like; they do not change the
+normalized clip. Keeping compositing separate means moving the camera re-runs one
+step instead of re-encoding every source.
+
+## Two text engines became one
+
+Titles used `drawtext` while captions used libass: two escaping rules, two font
+lookups, two positioning systems — and a bundled ffmpeg that had to satisfy
+`drawtext`'s freetype *and* harfbuzz dependency, which a slim build could not.
+
+Titles now compile to an ASS document and burn through the same `ass` filter.
+`drawtext` is no longer needed, and `doctor` no longer requires it.
+
+## Testing
+
+- Unit tests cover the document, the plan, parsing and the cache.
+- A CI matrix drives a **built binary** on Linux, both Mac architectures and
+  Windows on every push: doctor, a render with a title and burned captions, a
+  filename with a space and an apostrophe, a project moved and re-rendered,
+  frames, refusals, cache.
+- A macOS job transcribes synthesised speech with whisper.
+- A manual-dispatch job makes a real provider call from Windows, because a Linux
+  runner cannot prove Windows TLS or path escaping.
+
+## Known limits
+
+- `splice ffmpeg install` has been executed on Linux only; the macOS, Windows and
+  arm64 artifacts are hash-pinned and inspected, not run.
+- No GPU encoding, no streaming, no GUI.
+- One program audio bed; per-layer audio buses are not modelled.
+- ffmpeg is not bundled, by decision: `splice ffmpeg install` covers the case, and
+  bundling a build only wins for an install with no network at all.

@@ -1,0 +1,80 @@
+---
+title: "Rendering and caching"
+description: "What a render compiles to, how the cache decides, preview versus final, loudness, and prunes."
+---
+
+A render is not one ffmpeg command. `splice` compiles the document into steps and
+runs each into a content-addressed cache.
+
+## Steps
+
+1. **Normalize** each source to the working format, one step per clip.
+2. **Concat** the normalized segments.
+3. **Composite** layers in z order, with placement, camera and masks.
+4. **Decorate** with the grade, then titles and captions.
+5. **Mix** audio, with the bed, ducking and loudness.
+
+`splice plan` prints every step's argv without running anything. That is the tool
+to reach for when a render fails: the error came from one of those commands.
+
+## What a cache key is
+
+A step's key is its argv, the stat token of each input (path, size, mtime), the
+contract version, and the profile. So:
+
+- Changing one clip's trim rebuilds that clip's normalize step and everything
+  downstream, not the whole plan.
+- Re-running the same render reuses everything and says so:
+  `{"steps":{"total":7,"ran":0,"reused":7}}`.
+- `.splice/` is never authoritative. Delete it and the next render rebuilds.
+
+## Preview versus final
+
+```bash
+splice render --preview -o preview.mp4
+splice render -o out.mp4
+```
+
+`--preview` uses its own canvas, its own frame rate and its own cache, so
+iterating does not pollute the final cache or the other way round.
+
+## Loudness
+
+```bash
+splice render --loudnorm -o out.mp4
+splice render --loudnorm --lufs -16 --true-peak -1.5
+```
+
+`--loudnorm` adds one EBU R128 pass: video is copied, only audio is re-encoded.
+Defaults are −14 LUFS, −1 dBTP, LRA 11.
+
+## Stills
+
+```bash
+splice frames --at 1,2.5,4 -o stills
+splice frames --at 0,2,4,6 --sheet 2 -o sheet
+```
+
+`frames` reads the render's own output, so it cannot show something the render did
+not produce. It refuses with `nothing_rendered` when that profile has not been
+rendered yet.
+
+## The cache commands
+
+```bash
+splice cache info
+splice cache prune --dry-run
+splice cache prune
+splice cache prune --all
+```
+
+`prune` deletes by reference, never by age: it keeps every step key and sidecar
+stem referenced by the Final and Preview plans, each with and without the default
+loudness pass. A non-default loudness target keys differently and is rebuilt by
+the next render with those flags. If a plan cannot be built, nothing is deleted.
+
+<Warning>
+  Every `splice.json` in one directory shares a single `.splice/cache`, so pruning
+  from one project removes the other project's entries. Still safe — the cache is
+  never authoritative — but it costs a re-render.
+</Warning>
