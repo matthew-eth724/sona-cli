@@ -58,6 +58,8 @@
   "contextual": {
     "options": [
       "copy",
+      "mcp",
+      "add-mcp",
       "claude",
       "chatgpt",
       "cursor",
